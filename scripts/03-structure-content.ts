@@ -25,7 +25,13 @@ mkdirSync(dirs.pages, { recursive: true });
 
 // ── Load raw pages ─────────────────────────────────────────────────────────────
 const pageDir = resolve(dirs.raw, 'pages');
-const pageFiles = readdirSync(pageDir).filter(f => f.endsWith('.md'));
+const pageFiles = readdirSync(pageDir).filter(f => f.endsWith('.md') && !f.startsWith('.'));
+
+if (pageFiles.length === 0) {
+  console.error(`\n❌ No scraped pages found in ${pageDir}`);
+  console.error(`   Run step 2 first: pnpm scrape <url> ${clientName}`);
+  process.exit(1);
+}
 const sitemap: Array<{ url: string; slug: string; title: string }> =
   JSON.parse(readFileSync(resolve(dirs.raw, 'sitemap.json'), 'utf8'));
 

@@ -3,7 +3,7 @@
  * Usage:  pnpm generate <client-name> [--scheme scheme-a|scheme-b|scheme-c]
  */
 
-import { mkdirSync, cpSync, writeFileSync, readFileSync, readdirSync } from 'fs';
+import { mkdirSync, cpSync, writeFileSync, readFileSync, readdirSync, renameSync, rmSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { execSync } from 'child_process';
 import { TEMPLATE_DIR, getClientDir } from './config.js';
@@ -66,7 +66,8 @@ for (const f of existingMd) {
   // keep sample files if no structured pages exist
 }
 
-const structuredPages = readdirSync(dirs.pages).filter(f => f.endsWith('.md'));
+const structuredPages = readdirSync(dirs.pages)
+  .filter(f => f.endsWith('.md') && !f.startsWith('.') && f.length > 3);
 if (structuredPages.length > 0) {
   // Remove sample content
   for (const f of existingMd) {
@@ -103,14 +104,14 @@ writeFileSync(robotsPath, robots);
 console.log('\n📦 Installing dependencies...');
 execSync('pnpm install', { cwd: siteDir, stdio: 'inherit' });
 
-const distDir = resolve(siteDir, 'dist', scheme.id);
-mkdirSync(distDir, { recursive: true });
-
 console.log(`\n🔨 Building (${scheme.name})...`);
 execSync('pnpm build', { cwd: siteDir, stdio: 'inherit' });
 
-// Move dist to scheme-specific folder
-cpSync(resolve(siteDir, 'dist'), distDir, { recursive: true });
+// Rename dist/ → dist-<scheme-id>/ so multiple schemes can coexist
+const defaultDist = resolve(siteDir, 'dist');
+const distDir = resolve(siteDir, `dist-${scheme.id}`);
+if (existsSync(distDir)) rmSync(distDir, { recursive: true, force: true });
+renameSync(defaultDist, distDir);
 
 console.log(`\n✅ Site generated:`);
 console.log(`   Scheme: ${scheme.name} (${scheme.id})`);

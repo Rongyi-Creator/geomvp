@@ -19,7 +19,7 @@ type StepDef = {
   id: number;
   label: string;
   script: string;
-  getArgs: (url: string, client: string, scheme: string) => string[];
+  getArgs: (url: string, client: string, scheme: string, scrapeMode?: string) => string[];
 };
 
 const STEPS: StepDef[] = [
@@ -31,7 +31,8 @@ const STEPS: StepDef[] = [
   {
     id: 2, label: 'Scrape',
     script: '02-scrape-site.ts',
-    getArgs: (url, client) => [url, client],
+    getArgs: (url, client, _scheme, scrapeMode) =>
+      scrapeMode === 'manual' ? [url, client, '--manual'] : [url, client],
   },
   {
     id: 3, label: 'Structure',
@@ -74,10 +75,11 @@ const server = http.createServer((req, res) => {
 
   // ── SSE: run a single step ────────────────────────────────────────────────
   if (pathname === '/run') {
-    const stepId = parseInt(parsed.searchParams.get('step') ?? '0');
-    const url    = parsed.searchParams.get('url')    ?? '';
-    const client = parsed.searchParams.get('client') ?? '';
-    const scheme = parsed.searchParams.get('scheme') ?? 'scheme-a';
+    const stepId     = parseInt(parsed.searchParams.get('step') ?? '0');
+    const url        = parsed.searchParams.get('url')        ?? '';
+    const client     = parsed.searchParams.get('client')     ?? '';
+    const scheme     = parsed.searchParams.get('scheme')     ?? 'scheme-a';
+    const scrapeMode = parsed.searchParams.get('scrapeMode') ?? 'auto';
 
     const step = STEPS.find(s => s.id === stepId);
 
@@ -99,7 +101,7 @@ const server = http.createServer((req, res) => {
       try { res.write(`data: ${JSON.stringify(data)}\n\n`); } catch { /* client gone */ }
     };
 
-    const args       = step.getArgs(url, client, scheme);
+    const args       = step.getArgs(url, client, scheme, scrapeMode);
     const scriptPath = path.join(ROOT, 'scripts', step.script);
 
     send({ type: 'start', step: stepId, label: step.label, cmd: `tsx scripts/${step.script} ${args.join(' ')}` });

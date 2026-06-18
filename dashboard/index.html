@@ -97,7 +97,7 @@
   /* ── Inputs ─────────────────────────────────────────── */
   .inputs {
     display: grid;
-    grid-template-columns: 1fr 1fr auto;
+    grid-template-columns: 1fr 1fr auto auto;
     gap: 10px;
     align-items: end;
     margin-bottom: 20px;
@@ -361,6 +361,13 @@
         <option value="scheme-c">Scheme C — Cool</option>
       </select>
     </div>
+    <div class="field">
+      <label for="inp-scrape-mode">Scrape Mode</label>
+      <select id="inp-scrape-mode">
+        <option value="auto">Auto (Firecrawl)</option>
+        <option value="manual">Manual (fetch)</option>
+      </select>
+    </div>
   </div>
 
   <!-- Steps + Run All -->
@@ -445,9 +452,10 @@
   const statusBar   = document.getElementById('status-bar');
   const termTitle   = document.getElementById('terminal-title');
 
-  function getUrl()    { return document.getElementById('inp-url').value.trim(); }
-  function getClient() { return document.getElementById('inp-client').value.trim(); }
-  function getScheme() { return document.getElementById('inp-scheme').value; }
+  function getUrl()        { return document.getElementById('inp-url').value.trim(); }
+  function getClient()     { return document.getElementById('inp-client').value.trim(); }
+  function getScheme()     { return document.getElementById('inp-scheme').value; }
+  function getScrapeMode() { return document.getElementById('inp-scrape-mode').value; }
 
   function appendLog(html, cssClass = 't-stdout') {
     const span = document.createElement('span');
@@ -525,7 +533,7 @@
       termTitle.textContent = `Step ${stepId}: ${LABELS[stepId]} — running…`;
       setStatus(`Running Step ${stepId}: ${LABELS[stepId]}…`);
 
-      const params = new URLSearchParams({ step: stepId, url, client, scheme });
+      const params = new URLSearchParams({ step: stepId, url, client, scheme, scrapeMode: getScrapeMode() });
       const es = new EventSource(`/run?${params}`);
       currentES = es;
 
@@ -595,7 +603,7 @@
     lockUI();
 
     appendRaw(`<span class="t-header">⚡  Run All — starting pipeline\n</span>`);
-    appendRaw(`<span class="t-muted">URL: ${getUrl()}\nClient: ${getClient()}\nScheme: ${getScheme()}\n\n</span>`);
+    appendRaw(`<span class="t-muted">URL: ${getUrl()}\nClient: ${getClient()}\nScheme: ${getScheme()}\nScrape: ${getScrapeMode()}\n\n</span>`);
 
     const steps = [1, 2, 3, 4, 5];
     let stopped = false;

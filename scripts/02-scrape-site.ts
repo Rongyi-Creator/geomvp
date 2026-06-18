@@ -48,21 +48,29 @@ async function scrapeWithFirecrawl() {
   const { id: jobId } = await crawlRes.json() as { id: string };
   console.log(`  Job ID: ${jobId}`);
 
-  // Poll for completion
+  // Poll for completion (max 5 minutes)
   let pages: FirecrawlPage[] = [];
-  for (let i = 0; i < 60; i++) {
+  let completed = false;
+  for (let i = 0; i < 100; i++) {
     await new Promise(r => setTimeout(r, 3000));
     const statusRes = await fetch(`https://api.firecrawl.dev/v1/crawl/${jobId}`, {
       headers: { 'Authorization': `Bearer ${FIRECRAWL_API_KEY}` },
     });
     const status = await statusRes.json() as FirecrawlStatus;
-    process.stdout.write(`\r  Status: ${status.status} (${status.completed}/${status.total})`);
+    process.stdout.write(`\r  Status: ${status.status} (${status.completed ?? 0}/${status.total ?? '?'})`);
     if (status.status === 'completed') {
       pages = status.data ?? [];
+      completed = true;
       break;
+    }
+    if (status.status === 'failed') {
+      throw new Error(`Firecrawl job failed. Job ID: ${jobId}`);
     }
   }
   console.log();
+  if (!completed) {
+    throw new Error(`Firecrawl job timed out after 5 minutes. Job ID: ${jobId}\nTry: pnpm scrape ${url} ${process.argv[3]} --manual`);
+  }
   return pages;
 }
 
@@ -215,6 +223,12 @@ for (const page of rawPages) {
 
 writeFileSync(resolve(dirs.raw, 'sitemap.json'), JSON.stringify(sitemap, null, 2));
 writeFileSync(resolve(dirs.raw, 'image-map.json'), JSON.stringify(imageMap, null, 2));
+
+if (rawPages.length === 0) {
+  console.error('\n❌ No pages scraped. The site may be blocking crawlers or using heavy JS rendering.');
+  console.error(`   Try manual mode: pnpm scrape ${url} ${clientName} --manual`);
+  process.exit(1);
+}
 
 console.log(`\n✅ Scrape complete:`);
 console.log(`   Pages saved: ${rawPages.length}`);
