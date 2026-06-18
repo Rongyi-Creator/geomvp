@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GEO Reforge Dashboard</title>
+<style>
+  :root {
+    --bg:          #0f1117;
+    --surface:     #1a1d27;
+    --surface2:    #22263a;
+    --border:      #2d3148;
+    --primary:     #2E5E4E;
+    --primary-l:   #4A8B76;
+    --primary-d:   #1D3D33;
+    --text:        #e5e7eb;
+    --text-muted:  #6b7280;
+    --green:       #22c55e;
+    --red:         #ef4444;
+    --blue:        #60a5fa;
+    --yellow:      #fbbf24;
+    --radius:      8px;
+    --mono:        "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ─────────────────────────────────────────── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--primary-l);
+    letter-spacing: -0.3px;
+  }
+  .logo-icon {
+    width: 28px; height: 28px;
+    background: var(--primary);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  #env-status {
+    display: flex;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .env-pill {
+    display: flex; align-items: center; gap: 4px;
+    padding: 3px 8px;
+    border-radius: 99px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    font-size: 11px;
+  }
+  .env-pill .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+  .env-pill.ok .dot  { background: var(--green); }
+  .env-pill.miss .dot { background: var(--red); }
+
+  /* ── Main layout ────────────────────────────────────── */
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-width: 1100px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 24px 24px 0;
+  }
+
+  /* ── Inputs ─────────────────────────────────────────── */
+  .inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 10px;
+    align-items: end;
+    margin-bottom: 20px;
+  }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; }
+  input, select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 14px;
+    padding: 9px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+    width: 100%;
+  }
+  input:focus, select:focus { border-color: var(--primary-l); }
+  input::placeholder { color: var(--text-muted); }
+
+  /* ── Steps row ──────────────────────────────────────── */
+  .steps-bar {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    margin-bottom: 20px;
+  }
+  .step-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    text-align: left;
+    color: var(--text);
+    position: relative;
+    overflow: hidden;
+  }
+  .step-btn:hover:not(:disabled) { border-color: var(--primary-l); background: var(--surface2); }
+  .step-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .step-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .step-num {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+  }
+  .step-indicator {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+  .step-name {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .step-status {
+    font-size: 11px;
+    color: var(--text-muted);
+    min-height: 14px;
+    white-space: nowrap;
+  }
+
+  /* Step states */
+  .step-btn.running  { border-color: var(--blue); }
+  .step-btn.running .step-indicator  { background: var(--blue); animation: pulse 1s ease-in-out infinite; }
+  .step-btn.running .step-status     { color: var(--blue); }
+
+  .step-btn.done     { border-color: var(--green); }
+  .step-btn.done .step-indicator     { background: var(--green); }
+  .step-btn.done .step-status        { color: var(--green); }
+  .step-btn.done .step-name          { color: var(--green); }
+
+  .step-btn.error    { border-color: var(--red); }
+  .step-btn.error .step-indicator    { background: var(--red); }
+  .step-btn.error .step-status       { color: var(--red); }
+  .step-btn.error .step-name         { color: var(--red); }
+
+  /* Progress bar on running step */
+  .step-btn.running::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0;
+    height: 2px;
+    background: var(--blue);
+    animation: progress 2s linear infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  @keyframes progress {
+    0%   { width: 0%; left: 0; }
+    50%  { width: 100%; left: 0; }
+    100% { width: 0%; left: 100%; }
+  }
+
+  /* Run All button */
+  .run-all-btn {
+    padding: 12px 20px;
+    background: var(--primary);
+    border: none;
+    border-radius: var(--radius);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 90px;
+  }
+  .run-all-btn:hover:not(:disabled) { background: var(--primary-l); }
+  .run-all-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .run-all-icon { font-size: 18px; line-height: 1; }
+  .run-all-label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; }
+
+  /* ── Terminal ────────────────────────────────────────── */
+  .terminal-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .terminal-header {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .terminal-dots { display: flex; gap: 6px; }
+  .terminal-dots span {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+  .terminal-dots .d1 { background: #ef4444; }
+  .terminal-dots .d2 { background: #fbbf24; }
+  .terminal-dots .d3 { background: #22c55e; }
+  .terminal-title {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    flex: 1;
+    text-align: center;
+  }
+  .clear-btn {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .clear-btn:hover { color: var(--text); border-color: var(--text-muted); }
+
+  #terminal {
+    flex: 1;
+    background: #0d1117;
+    overflow-y: auto;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    min-height: 360px;
+    max-height: 460px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  /* Terminal text colors */
+  .t-header  { color: #60a5fa; font-weight: 700; }
+  .t-stdout  { color: #d1fae5; }
+  .t-stderr  { color: #fde68a; }
+  .t-done    { color: #22c55e; font-weight: 700; }
+  .t-error   { color: #ef4444; font-weight: 700; }
+  .t-cmd     { color: #9ca3af; }
+  .t-divider { color: #2d3148; }
+  .t-muted   { color: #4b5563; }
+
+  /* ── Footer ─────────────────────────────────────────── */
+  footer {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 10px 24px;
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #status-bar { font-family: var(--mono); color: var(--text-muted); }
+
+  @media (max-width: 700px) {
+    .inputs { grid-template-columns: 1fr; }
+    .steps-bar { flex-wrap: wrap; }
+    .step-btn { min-width: calc(50% - 4px); flex: unset; }
+    .run-all-btn { width: 100%; flex-direction: row; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🌍</div>
+    GEO Reforge Dashboard
+  </div>
+  <div id="env-status">
+    <div class="env-pill" id="pill-firecrawl">
+      <span class="dot"></span> Firecrawl
+    </div>
+    <div class="env-pill" id="pill-anthropic">
+      <span class="dot"></span> Anthropic
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- Inputs -->
+  <div class="inputs">
+    <div class="field">
+      <label for="inp-url">Target URL</label>
+      <input id="inp-url" type="url" placeholder="https://virumakupunktur.dk" value="https://virumakupunktur.dk" />
+    </div>
+    <div class="field">
+      <label for="inp-client">Client Name</label>
+      <input id="inp-client" type="text" placeholder="virum-akupunktur" value="virum-akupunktur" />
+    </div>
+    <div class="field">
+      <label for="inp-scheme">Color Scheme</label>
+      <select id="inp-scheme">
+        <option value="scheme-a">Scheme A — Original</option>
+        <option value="scheme-b">Scheme B — Warm</option>
+        <option value="scheme-c">Scheme C — Cool</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Steps + Run All -->
+  <div class="steps-bar">
+    <button class="step-btn" data-step="1" onclick="handleStep(1)">
+      <div class="step-top">
+        <span class="step-num">STEP 01</span>
+        <span class="step-indicator"></span>
+      </div>
+      <div class="step-name">Check</div>
+      <div class="step-status" id="status-1">idle</div>
+    </button>
+
+    <button class="step-btn" data-step="2" onclick="handleStep(2)">
+      <div class="step-top">
+        <span class="step-num">STEP 02</span>
+        <span class="step-indicator"></span>
+      </div>
+      <div class="step-name">Scrape</div>
+      <div class="step-status" id="status-2">idle</div>
+    </button>
+
+    <button class="step-btn" data-step="3" onclick="handleStep(3)">
+      <div class="step-top">
+        <span class="step-num">STEP 03</span>
+        <span class="step-indicator"></span>
+      </div>
+      <div class="step-name">Structure</div>
+      <div class="step-status" id="status-3">idle</div>
+    </button>
+
+    <button class="step-btn" data-step="4" onclick="handleStep(4)">
+      <div class="step-top">
+        <span class="step-num">STEP 04</span>
+        <span class="step-indicator"></span>
+      </div>
+      <div class="step-name">Generate</div>
+      <div class="step-status" id="status-4">idle</div>
+    </button>
+
+    <button class="step-btn" data-step="5" onclick="handleStep(5)">
+      <div class="step-top">
+        <span class="step-num">STEP 05</span>
+        <span class="step-indicator"></span>
+      </div>
+      <div class="step-name">QA</div>
+      <div class="step-status" id="status-5">idle</div>
+    </button>
+
+    <button class="run-all-btn" id="run-all-btn" onclick="handleRunAll()">
+      <span class="run-all-icon">⚡</span>
+      <span class="run-all-label">RUN ALL</span>
+    </button>
+  </div>
+
+  <!-- Terminal -->
+  <div class="terminal-wrap">
+    <div class="terminal-header">
+      <div class="terminal-dots">
+        <span class="d1"></span><span class="d2"></span><span class="d3"></span>
+      </div>
+      <div class="terminal-title" id="terminal-title">— ready —</div>
+      <button class="clear-btn" onclick="clearLog()">Clear</button>
+    </div>
+    <div id="terminal"></div>
+  </div>
+
+</main>
+
+<footer>
+  <span>GEO Reforge · /Users/blake/Documents/geomvp</span>
+  <span id="status-bar">Waiting for input…</span>
+</footer>
+
+<script>
+  // ── State ─────────────────────────────────────────────────────────────────
+  let isRunning   = false;
+  let currentES   = null;   // active EventSource
+
+  // ── DOM helpers ──────────────────────────────────────────────────────────
+  const term        = document.getElementById('terminal');
+  const statusBar   = document.getElementById('status-bar');
+  const termTitle   = document.getElementById('terminal-title');
+
+  function getUrl()    { return document.getElementById('inp-url').value.trim(); }
+  function getClient() { return document.getElementById('inp-client').value.trim(); }
+  function getScheme() { return document.getElementById('inp-scheme').value; }
+
+  function appendLog(html, cssClass = 't-stdout') {
+    const span = document.createElement('span');
+    span.className = cssClass;
+    span.textContent = html;
+    term.appendChild(span);
+    term.scrollTop = term.scrollHeight;
+  }
+
+  function appendRaw(html) {
+    term.insertAdjacentHTML('beforeend', html);
+    term.scrollTop = term.scrollHeight;
+  }
+
+  function clearLog() {
+    term.innerHTML = '';
+    termTitle.textContent = '— ready —';
+  }
+
+  function setStatus(text) {
+    statusBar.textContent = text;
+  }
+
+  // ── Step button states ───────────────────────────────────────────────────
+  function setStepState(stepId, state, detail = '') {
+    const btn = document.querySelector(`[data-step="${stepId}"]`);
+    const statusEl = document.getElementById(`status-${stepId}`);
+    if (!btn || !statusEl) return;
+
+    btn.className = `step-btn ${state}`;
+    const stateText = {
+      idle:    'idle',
+      running: 'running…',
+      done:    detail || 'done',
+      error:   detail || 'error',
+    }[state] ?? state;
+    statusEl.textContent = stateText;
+  }
+
+  function resetAllSteps() {
+    [1,2,3,4,5].forEach(i => setStepState(i, 'idle'));
+  }
+
+  // ── Lock/unlock all controls ─────────────────────────────────────────────
+  function lockUI() {
+    isRunning = true;
+    document.querySelectorAll('.step-btn, .run-all-btn').forEach(b => b.disabled = true);
+  }
+
+  function unlockUI() {
+    isRunning = false;
+    document.querySelectorAll('.step-btn, .run-all-btn').forEach(b => b.disabled = false);
+  }
+
+  // ── Run a single step (returns Promise<exitCode>) ─────────────────────────
+  function runStep(stepId) {
+    return new Promise((resolve, reject) => {
+      const url    = getUrl();
+      const client = getClient();
+      const scheme = getScheme();
+
+      if (!url || !client) {
+        appendRaw(`<span class="t-error">⚠ Please fill in URL and Client Name.\n</span>`);
+        reject(new Error('Missing inputs'));
+        return;
+      }
+
+      const LABELS = { 1:'Check', 2:'Scrape', 3:'Structure', 4:'Generate', 5:'QA' };
+
+      // Divider
+      appendRaw(`<span class="t-divider">${'─'.repeat(60)}\n</span>`);
+      appendRaw(`<span class="t-header">▶  Step ${stepId}: ${LABELS[stepId]}\n</span>`);
+
+      setStepState(stepId, 'running');
+      termTitle.textContent = `Step ${stepId}: ${LABELS[stepId]} — running…`;
+      setStatus(`Running Step ${stepId}: ${LABELS[stepId]}…`);
+
+      const params = new URLSearchParams({ step: stepId, url, client, scheme });
+      const es = new EventSource(`/run?${params}`);
+      currentES = es;
+
+      let startTime = Date.now();
+
+      es.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+
+        if (msg.type === 'start') {
+          appendRaw(`<span class="t-cmd">$ ${msg.cmd}\n\n</span>`);
+          startTime = Date.now();
+        }
+
+        else if (msg.type === 'log') {
+          appendLog(msg.text, msg.stream === 'stderr' ? 't-stderr' : 't-stdout');
+        }
+
+        else if (msg.type === 'done') {
+          const secs = (msg.duration / 1000).toFixed(1);
+          appendRaw(`\n<span class="t-done">✅  Done in ${secs}s\n</span>`);
+          setStepState(stepId, 'done', `✓ ${secs}s`);
+          termTitle.textContent = `Step ${stepId}: ${LABELS[stepId]} — done (${secs}s)`;
+          setStatus(`Step ${stepId} completed in ${secs}s`);
+          es.close();
+          currentES = null;
+          resolve(0);
+        }
+
+        else if (msg.type === 'error') {
+          const secs = (msg.duration / 1000).toFixed(1);
+          appendRaw(`\n<span class="t-error">❌  Failed (exit ${msg.exitCode}) after ${secs}s\n</span>`);
+          setStepState(stepId, 'error', `✗ exit ${msg.exitCode}`);
+          termTitle.textContent = `Step ${stepId}: ${LABELS[stepId]} — failed`;
+          setStatus(`Step ${stepId} failed`);
+          es.close();
+          currentES = null;
+          reject(new Error(`Exit ${msg.exitCode}`));
+        }
+      };
+
+      es.onerror = () => {
+        appendRaw(`<span class="t-error">Connection lost.\n</span>`);
+        setStepState(stepId, 'error', '✗ connection error');
+        termTitle.textContent = `Step ${stepId} — connection error`;
+        es.close();
+        currentES = null;
+        reject(new Error('SSE connection error'));
+      };
+    });
+  }
+
+  // ── Individual step click ─────────────────────────────────────────────────
+  async function handleStep(stepId) {
+    if (isRunning) return;
+    lockUI();
+    try {
+      await runStep(stepId);
+    } catch { /* status already updated */ }
+    unlockUI();
+  }
+
+  // ── Run All ──────────────────────────────────────────────────────────────
+  async function handleRunAll() {
+    if (isRunning) return;
+    resetAllSteps();
+    clearLog();
+    lockUI();
+
+    appendRaw(`<span class="t-header">⚡  Run All — starting pipeline\n</span>`);
+    appendRaw(`<span class="t-muted">URL: ${getUrl()}\nClient: ${getClient()}\nScheme: ${getScheme()}\n\n</span>`);
+
+    const steps = [1, 2, 3, 4, 5];
+    let stopped = false;
+
+    for (const stepId of steps) {
+      if (stopped) {
+        setStepState(stepId, 'idle');
+        continue;
+      }
+      try {
+        await runStep(stepId);
+      } catch {
+        stopped = true;
+        appendRaw(`\n<span class="t-error">Pipeline stopped at Step ${stepId}. Fix the error and rerun.\n</span>`);
+        setStatus(`Pipeline failed at Step ${stepId}`);
+      }
+    }
+
+    if (!stopped) {
+      appendRaw(`\n<span class="t-divider">${'─'.repeat(60)}\n</span>`);
+      appendRaw(`<span class="t-done">🎉  All steps completed successfully!\n</span>`);
+      setStatus('Pipeline complete ✅');
+      termTitle.textContent = 'All steps done ✅';
+    }
+
+    unlockUI();
+  }
+
+  // ── Check env vars on load ────────────────────────────────────────────────
+  async function checkEnv() {
+    try {
+      const res  = await fetch('/api/env');
+      const data = await res.json();
+
+      const fc = document.getElementById('pill-firecrawl');
+      const an = document.getElementById('pill-anthropic');
+
+      fc.className = `env-pill ${data.firecrawl ? 'ok' : 'miss'}`;
+      an.className = `env-pill ${data.anthropic  ? 'ok' : 'miss'}`;
+
+      if (!data.firecrawl || !data.anthropic) {
+        appendRaw(`<span class="t-stderr">⚠  Some API keys are missing in .env.local\n`);
+        if (!data.firecrawl) appendRaw(`   • FIRECRAWL_API_KEY — scrape will use manual fetch fallback\n`);
+        if (!data.anthropic)  appendRaw(`   • ANTHROPIC_API_KEY — structure step will use --manual mode\n`);
+        appendRaw(`</span>\n`);
+      } else {
+        appendRaw(`<span class="t-done">✅  API keys loaded — Firecrawl + Anthropic ready\n</span>\n`);
+      }
+    } catch {
+      appendRaw(`<span class="t-stderr">Could not reach server API.\n</span>`);
+    }
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  appendRaw(`<span class="t-muted">GEO Reforge Dashboard · ready\nFill in the URL and Client Name, then click a step or Run All.\n\n</span>`);
+  checkEnv();
+</script>
+</body>
+</html>

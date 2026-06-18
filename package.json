@@ -3,6 +3,7 @@
   "type": "module",
   "version": "1.0.0",
   "scripts": {
+    "dashboard": "tsx dashboard/server.ts",
     "check": "tsx scripts/01-check-compatibility.ts",
     "scrape": "tsx scripts/02-scrape-site.ts",
     "structure": "tsx scripts/03-structure-content.ts",

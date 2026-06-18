@@ -1,5 +1,9 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import { resolve } from 'path';
+
+// Load .env first, then .env.local (overrides). Mirrors Vite/Next.js convention.
+dotenv.config({ path: resolve(import.meta.dirname, '..', '.env') });
+dotenv.config({ path: resolve(import.meta.dirname, '..', '.env.local'), override: true });
 
 export const ROOT = resolve(import.meta.dirname, '..');
 
