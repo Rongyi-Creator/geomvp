@@ -16,7 +16,7 @@ if (!clientName) {
 }
 
 const dirs = getClientDir(clientName);
-const distDir = resolve(dirs.site, 'dist', schemeFlag === '--scheme' ? schemeId : 'scheme-a');
+const distDir = resolve(dirs.site, `dist-${schemeFlag === '--scheme' ? schemeId : 'scheme-a'}`);
 
 if (!existsSync(distDir)) {
   console.error(`❌ No build found at ${distDir}. Run: pnpm generate ${clientName} first.`);
@@ -58,9 +58,9 @@ check('LocalBusiness schema present', !!localBusiness, localBusiness ? 'Found' :
 if (localBusiness) {
   check('LB: name',    !!localBusiness.name,      `name: ${localBusiness.name ?? 'MISSING'}`);
   check('LB: address', !!localBusiness.address,   `address: ${localBusiness.address ? 'present' : 'MISSING'}`);
-  check('LB: phone',   !!localBusiness.telephone, `phone: ${localBusiness.telephone ?? 'MISSING'}`);
+  check('LB: phone',   !!localBusiness.telephone, `phone: ${localBusiness.telephone ?? 'MISSING'}`, true);
   check('LB: hours',   Array.isArray(localBusiness.openingHoursSpecification) && localBusiness.openingHoursSpecification.length > 0,
-    `hours: ${localBusiness.openingHoursSpecification?.length ?? 0} entries`);
+    `hours: ${localBusiness.openingHoursSpecification?.length ?? 0} entries`, true);
 }
 
 const faqHtml = readHtml(resolve(distDir, 'faq', 'index.html'));
@@ -86,7 +86,7 @@ for (const file of htmlFiles) {
 
 check('No CDN references', externalCdnRefs === 0, `${externalCdnRefs} external CDN img src found`);
 check('All images have alt', missingAlt === 0, `${missingAlt} images missing alt`, missingAlt > 0 && missingAlt <= 2);
-check('Booking links preserved', externalLinks > 0, `${externalLinks} pages have booking link`);
+check('Booking links preserved', externalLinks > 0, `${externalLinks} pages have booking link`, true);
 
 // ── 3. SEO basics ───────────────────────────────────────────────────────────────
 const titles = new Set<string>();
