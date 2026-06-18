@@ -34,3 +34,6 @@ pnpm-debug.log*
 # Client raw data (may contain PII / scraped content)
 clients/*/raw/
 clients/*/site/dist/
+clients/*/clone/raw/
+clients/*/clone/assets/
+clients/*/clone/dist/

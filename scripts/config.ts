@@ -17,6 +17,19 @@ export function getClientDir(clientName: string) {
   };
 }
 
+export function getCloneDir(clientName: string) {
+  const base = resolve(ROOT, 'clients', clientName, 'clone');
+  return {
+    base,
+    raw:      resolve(base, 'raw'),
+    assets:   resolve(base, 'assets'),
+    css:      resolve(base, 'assets', 'css'),
+    images:   resolve(base, 'assets', 'images'),
+    geoData:  resolve(base, 'geo-data'),
+    dist:     resolve(base, 'dist'),
+  };
+}
+
 export const FIRECRAWL_API_KEY  = process.env.FIRECRAWL_API_KEY ?? '';
 export const ANTHROPIC_API_KEY  = process.env.ANTHROPIC_API_KEY ?? '';
 export const TEMPLATE_DIR       = resolve(ROOT, 'template');

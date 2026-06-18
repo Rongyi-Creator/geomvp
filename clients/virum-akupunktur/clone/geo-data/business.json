@@ -1,0 +1,37 @@
+{
+  "name": "Virum Akupunktur",
+  "schemaType": "MedicalBusiness",
+  "description": "Virum Akupunktur tilbyder en unik holistisk service til kunder gennem evaluering og skabelse af passende behandlingsforløb baseret på Traditionel Kinesisk Medicin. Klinikken specialiserer sig i sikre, effektive og afslappende smertebehandlinger.",
+  "phone": null,
+  "email": null,
+  "website": "https://virumakupunktur.dk",
+  "bookingUrl": "https://virumakupunktur.dk/booking",
+  "facebookUrl": null,
+  "trustpilotUrl": null,
+  "googleMapsUrl": null,
+  "address": {
+    "street": "Dalstrøget 78, 4. sal",
+    "city": "Dyssegård",
+    "zip": "2870",
+    "country": "DK"
+  },
+  "geo": {
+    "lat": 55.7367,
+    "lng": 12.5186
+  },
+  "hours": [],
+  "practitioner": {
+    "name": null,
+    "title": "Akupunktør",
+    "credentials": [],
+    "specialties": [
+      "Smertebehandling",
+      "Kosmetisk akupunktur",
+      "Traditionel Kinesisk Medicin"
+    ]
+  },
+  "insurance": [],
+  "sameAs": [],
+  "aboutSummary": "Virum Akupunktur er beliggende på Dalstrøget 78, 4. sal i Dyssegård (tages elevator til 4. sal). Den første behandling starter med en grundig undersøgelse, hvor patientens diagnose stilles ifølge TCM's teori, og der tilbydes gratis konsultation samt en specialpris på første prøvebehandling (ca. 75 min.) til 450 kr.",
+  "language": "da"
+}

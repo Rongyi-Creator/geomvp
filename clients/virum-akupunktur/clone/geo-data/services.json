@@ -1,0 +1,162 @@
+[
+  {
+    "name": "Akupunktur behandling",
+    "slug": "our-team/akupunktur-behandling",
+    "description": "Generel akupunkturbehandling baseret på TCM-diagnose og individuelt tilpasset behandlingsforløb."
+  },
+  {
+    "name": "Smertebehandling",
+    "slug": "our-team/smertebehandling",
+    "description": "Behandling af mange forskellige typer smerter, herunder akutte smerter og smerter fra sportsudøvelse."
+  },
+  {
+    "name": "Eksem",
+    "slug": "our-team/eksem",
+    "description": "Akupunktur mod eksem, som skønnes at ramme mere end 10% af befolkningen hvert år i lettere eller sværere grad."
+  },
+  {
+    "name": "Fedme og overvægt",
+    "slug": "our-team/fedme-og-overv-gt",
+    "description": "Akupunkturbehandling til støtte ved fedme og overvægt."
+  },
+  {
+    "name": "Fordøjelsesproblemer",
+    "slug": "our-team/ford-jelsesproblemer",
+    "description": "Akupunkturbehandling af fordøjelsesproblemer."
+  },
+  {
+    "name": "Frossen skulder",
+    "slug": "our-team/frossen-skulder",
+    "description": "Akupunkturbehandling af frossen skulder og relaterede smerter."
+  },
+  {
+    "name": "Hæmorider",
+    "slug": "our-team/h-morider",
+    "description": "Akupunkturbehandling af hæmorider."
+  },
+  {
+    "name": "Helvedesild hurtig Smertelindring",
+    "slug": "our-team/helvedesild-hurtig-smertelindring",
+    "description": "Hurtig smertelindring ved helvedesild med akupunktur."
+  },
+  {
+    "name": "Herpes og forkølelsessår",
+    "slug": "our-team/herpes-og-fork-lelsess-r",
+    "description": "Akupunkturbehandling mod herpes og forkølelsessår."
+  },
+  {
+    "name": "Hjertebanken",
+    "slug": "our-team/hjertebanken",
+    "description": "Akupunkturbehandling ved hjertebanken."
+  },
+  {
+    "name": "Højt og lavt blodtryk",
+    "slug": "our-team/h-jt-og-lavt-blodtryk",
+    "description": "Akupunkturbehandling til regulering af højt og lavt blodtryk."
+  },
+  {
+    "name": "Hormonelle ubalancer",
+    "slug": "our-team/hormonelle-ubalancer",
+    "description": "Akupunkturbehandling af hormonelle ubalancer."
+  },
+  {
+    "name": "Hovedpine og migræne",
+    "slug": "our-team/hovedpine-og-migr-ne",
+    "description": "Akupunkturbehandling mod hovedpine og migræne."
+  },
+  {
+    "name": "Irriteret tyktarm",
+    "slug": "our-team/irriteret-tyktarm",
+    "description": "Akupunkturbehandling af irriteret tyktarm."
+  },
+  {
+    "name": "Iskias",
+    "slug": "our-team/iskias",
+    "description": "Akupunkturbehandling af iskias og relaterede smerter."
+  },
+  {
+    "name": "Lændesmerter",
+    "slug": "our-team/l-ndesmerter",
+    "description": "Akupunkturbehandling af lændesmerter."
+  },
+  {
+    "name": "Leddegigt og slidgigt",
+    "slug": "our-team/leddegigt-og-slidgigt",
+    "description": "Akupunkturbehandling af leddegigt og slidgigt."
+  },
+  {
+    "name": "Mavesår",
+    "slug": "our-team/maves-r",
+    "description": "Akupunkturbehandling af mavesår."
+  },
+  {
+    "name": "Mavesyre og halsbrand",
+    "slug": "our-team/mavesyre-og-halsbrand",
+    "description": "Akupunkturbehandling mod mavesyre og halsbrand."
+  },
+  {
+    "name": "Menstruationssmerter og endometriose",
+    "slug": "our-team/menstruationssmerter-og-endometriose",
+    "description": "Akupunkturbehandling af menstruationssmerter og endometriose."
+  },
+  {
+    "name": "Morbus Crohn og Colitis",
+    "slug": "our-team/morbus-crohn-og-colitis",
+    "description": "Akupunkturbehandling ved Morbus Crohn og Colitis."
+  },
+  {
+    "name": "Musearm og tennisalbue",
+    "slug": "our-team/musearm-og-tennisalbue",
+    "description": "Akupunkturbehandling af musearm og tennisalbue."
+  },
+  {
+    "name": "Muskelspændinger og myoser",
+    "slug": "our-team/muskelsp-ndinger-og-myoser",
+    "description": "Akupunkturbehandling af muskelspændinger og myoser."
+  },
+  {
+    "name": "Ødemer og væskeophobning",
+    "slug": "our-team/demer-og-v-skeophobning",
+    "description": "Akupunkturbehandling af ødemer og væskeophobning."
+  },
+  {
+    "name": "Overgangsalder",
+    "slug": "our-team/overgangsalder",
+    "description": "Akupunkturbehandling af symptomer ved overgangsalder."
+  },
+  {
+    "name": "Piskesmæld – whiplash",
+    "slug": "our-team/piskesm-ld-whiplash",
+    "description": "Akupunkturbehandling af piskesmæld og whiplash."
+  },
+  {
+    "name": "PMS",
+    "slug": "our-team/pms",
+    "description": "Akupunkturbehandling af PMS-symptomer."
+  },
+  {
+    "name": "Prostata",
+    "slug": "our-team/prostata",
+    "description": "Akupunkturbehandling ved prostataproblemer."
+  },
+  {
+    "name": "Psoriasis",
+    "slug": "our-team/psoriasis",
+    "description": "Akupunkturbehandling af psoriasis."
+  },
+  {
+    "name": "Rygestop",
+    "slug": "our-team/rygestop",
+    "description": "Akupunktur som støtte til rygestop."
+  },
+  {
+    "name": "Rygsmerter",
+    "slug": "our-team/rygsmerter",
+    "description": "Akupunkturbehandling af rygsmerter."
+  },
+  {
+    "name": "Rynker og kosmetisk akupunktur",
+    "slug": "our-team/rynker-og-kosmetisk-akupunktur",
+    "description": "Kosmetisk akupunktur til behandling af rynker og hudpleje."
+  }
+]

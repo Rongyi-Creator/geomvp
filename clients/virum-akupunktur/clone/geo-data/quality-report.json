@@ -1,0 +1,128 @@
+{
+  "timestamp": "2026-06-18T18:43:24.642Z",
+  "clientName": "virum-akupunktur",
+  "pipeline": "clone",
+  "pass": true,
+  "checks": [
+    {
+      "name": "Page count",
+      "status": "pass",
+      "detail": "38 pages in dist"
+    },
+    {
+      "name": "LocalBusiness schema on homepage",
+      "status": "pass",
+      "detail": "@type: MedicalBusiness"
+    },
+    {
+      "name": "LB: name",
+      "status": "pass",
+      "detail": "Virum Akupunktur"
+    },
+    {
+      "name": "LB: address",
+      "status": "pass",
+      "detail": "present"
+    },
+    {
+      "name": "LB: phone",
+      "status": "warn",
+      "detail": "not found"
+    },
+    {
+      "name": "LB: hours",
+      "status": "warn",
+      "detail": "0 entries"
+    },
+    {
+      "name": "Service schemas",
+      "status": "pass",
+      "detail": "32 service pages with schema"
+    },
+    {
+      "name": "Unique titles",
+      "status": "pass",
+      "detail": "38/38 unique"
+    },
+    {
+      "name": "Unique descriptions",
+      "status": "pass",
+      "detail": "38/38 unique"
+    },
+    {
+      "name": "Canonical URLs",
+      "status": "pass",
+      "detail": "all pages"
+    },
+    {
+      "name": "Open Graph tags",
+      "status": "pass",
+      "detail": "all pages"
+    },
+    {
+      "name": "lang attribute",
+      "status": "pass",
+      "detail": "all pages"
+    },
+    {
+      "name": "No client-side JS",
+      "status": "pass",
+      "detail": "clean"
+    },
+    {
+      "name": "Booking links preserved",
+      "status": "pass",
+      "detail": "38 pages with booking link"
+    },
+    {
+      "name": "External links preserved",
+      "status": "pass",
+      "detail": "76 external link references found"
+    },
+    {
+      "name": "All pages cloned",
+      "status": "pass",
+      "detail": "38 dist vs 38 raw"
+    },
+    {
+      "name": "llms.txt exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "sitemap.xml exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "robots.txt exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "llms.txt has content",
+      "status": "pass",
+      "detail": "6318 chars"
+    },
+    {
+      "name": "llms.txt has business name",
+      "status": "pass",
+      "detail": "has heading"
+    },
+    {
+      "name": "Sitemap has URLs",
+      "status": "pass",
+      "detail": "38 URLs"
+    },
+    {
+      "name": "robots.txt has sitemap ref",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "Local asset references valid",
+      "status": "pass",
+      "detail": "all local refs resolve"
+    }
+  ]
+}

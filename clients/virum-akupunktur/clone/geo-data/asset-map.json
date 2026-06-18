@@ -1,0 +1,37 @@
+{
+  "css": {
+    "https://virumakupunktur.dk/onewebstatic/16a3bb7e62.css": "_assets/css/style-efa0b078.css",
+    "https://virumakupunktur.dk/onewebstatic/b7395d009a.css": "_assets/css/style-3b7915dd.css",
+    "https://virumakupunktur.dk/onewebstatic/a2541772a6.css": "_assets/css/style-68cc6f18.css",
+    "https://virumakupunktur.dk/onewebstatic/google-fonts.php?url=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DRoboto%253A100%252C100italic%252C200%252C200italic%252C300%252C300italic%252C500%252C500italic%252C600%252C600italic%252C700%252C700italic%252C800%252C800italic%252C900%252C900italic%252Citalic%252Cregular&subset%3Dall": "_assets/css/style-2ce433ea.css",
+    "https://virumakupunktur.dk/onewebstatic/google-fonts.php?url=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DMontserrat%253A100%252C100italic%252C200%252C200italic%252C300%252C300italic%252C500%252C500italic%252C600%252C600italic%252C700%252C700italic%252C800%252C800italic%252C900%252C900italic%252Citalic%252Cregular&subset%3Dall": "_assets/css/style-3380ea41.css",
+    "https://virumakupunktur.dk/onewebstatic/google-fonts.php?url=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DOooh%2520Baby%253A100%252C100italic%252C200%252C200italic%252C300%252C300italic%252C500%252C500italic%252C600%252C600italic%252C700%252C700italic%252C800%252C800italic%252C900%252C900italic%252Citalic%252Cregular&subset%3Dall": "_assets/css/style-293a3c2c.css",
+    "https://virumakupunktur.dk/onewebstatic/google-fonts.php?url=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DOpen%2520Sans%253A100%252C100italic%252C200%252C200italic%252C300%252C300italic%252C500%252C500italic%252C600%252C600italic%252C700%252C700italic%252C800%252C800italic%252C900%252C900italic%252Citalic%252Cregular&subset%3Dall": "_assets/css/style-412d8eea.css",
+    "https://virumakupunktur.dk/onewebstatic/da0725e02e.css": "_assets/css/style-99b3ed2c.css",
+    "https://virumakupunktur.dk/onewebstatic/ffe0267f1d.css": "_assets/css/style-d7bb83be.css",
+    "https://virumakupunktur.dk/onewebstatic/3573b95bf2.css": "_assets/css/style-a357d302.css",
+    "https://virumakupunktur.dk/onewebstatic/da43d8f75c.css": "_assets/css/style-e51a4677.css",
+    "https://virumakupunktur.dk/onewebstatic/31df584c9d.css": "_assets/css/style-c8581c13.css",
+    "https://virumakupunktur.dk/onewebstatic/2cd3e72cf7.css": "_assets/css/style-6770e1fa.css",
+    "https://virumakupunktur.dk/onewebstatic/aba6d5e173.css": "_assets/css/style-8d598ed7.css",
+    "https://virumakupunktur.dk/onewebstatic/3ccef31cc1.css": "_assets/css/style-43b898ee.css"
+  },
+  "images": {
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/for3.jpg?etag=null&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=237%2B316&extract=0%2B0%2B232%2B316&quality=85": "_assets/images/for3.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/for1.jpg?etag=undefined&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=252%2B336&extract=0%2B0%2B252%2B243&quality=85": "_assets/images/for1.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/efter3.jpg?etag=undefined&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=248%2B331&extract=0%2B0%2B248%2B326&quality=85": "_assets/images/efter3.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/efter1.jpg?etag=undefined&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=248%2B331&extract=0%2B0%2B248%2B243&quality=85": "_assets/images/efter1.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/jie%20PIC2.jpg?etag=undefined&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=646%2B646&extract=0%2B0%2B575%2B646&quality=85": "_assets/images/jie_20PIC2.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/office2.jpg?etag=undefined&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=859%2B644&extract=259%2B0%2B600%2B644&quality=85": "_assets/images/office2.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/akupunktur.jpg?etag=undefined&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=493%2B329&extract=112%2B21%2B300%2B308&quality=85": "_assets/images/akupunktur.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/akupunktur1.jpg?etag=undefined&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=684%2B386&extract=50%2B37%2B366%2B304&quality=85": "_assets/images/akupunktur1.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/akupunktur%20suge.jpg?etag=undefined&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=494%2B329&extract=50%2B21%2B329%2B308&quality=85": "_assets/images/akupunktur_20suge.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/skrab.jpg?etag=undefined&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=300%2B225&extract=48%2B29%2B199%2B195&quality=85": "_assets/images/skrab.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/moxibustion.jpg?etag=undefined&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=527%2B351&extract=162%2B31%2B326%2B320&quality=85": "_assets/images/moxibustion.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/%C3%B8reakupunktur.jpg?etag=undefined&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=787%2B351&extract=198%2B31%2B326%2B320&quality=85": "_assets/images/_C3_B8reakupunktur.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/moxibustion.jpg?etag=null&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=527%2B351&extract=162%2B31%2B326%2B320&quality=85": "_assets/images/moxibustion.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/%E9%92%88%E7%81%B82.jpg?etag=null&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=137%2B200&extract=0%2B0%2B137%2B200&quality=85": "_assets/images/_E9_92_88_E7_81_B82.jpg",
+    "https://virumakupunktur.dk/onewebstatic/accadc6cf4.jpg": "_assets/images/accadc6cf4.jpg",
+    "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/akupunktur.jpg?etag=null&sourceContentType=image%2Fjpeg&ignoreAspectRatio&resize=487%2B325&extract=0%2B0%2B472%2B272&quality=85": "_assets/images/akupunktur.jpg"
+  }
+}

@@ -9,15 +9,21 @@
     "structure": "tsx scripts/03-structure-content.ts",
     "generate": "tsx scripts/04-generate-site.ts",
     "qa": "tsx scripts/05-quality-check.ts",
-    "run-all": "tsx scripts/01-check-compatibility.ts && tsx scripts/02-scrape-site.ts && tsx scripts/03-structure-content.ts && tsx scripts/04-generate-site.ts && tsx scripts/05-quality-check.ts"
+    "run-all": "tsx scripts/01-check-compatibility.ts && tsx scripts/02-scrape-site.ts && tsx scripts/03-structure-content.ts && tsx scripts/04-generate-site.ts && tsx scripts/05-quality-check.ts",
+    "clone:site": "tsx scripts/clone/01-clone-site.ts",
+    "clone:extract": "tsx scripts/clone/02-extract-geo.ts",
+    "clone:inject": "tsx scripts/clone/03-inject-geo.ts",
+    "clone:qa": "tsx scripts/clone/04-quality-check.ts",
+    "clone:all": "tsx scripts/clone/01-clone-site.ts && tsx scripts/clone/02-extract-geo.ts && tsx scripts/clone/03-inject-geo.ts && tsx scripts/clone/04-quality-check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
+    "cheerio": "^1.2.0",
     "dotenv": "^16.4.7"
   },
   "devDependencies": {
+    "@types/node": "^22.15.29",
     "tsx": "^4.19.3",
-    "typescript": "^5.8.3",
-    "@types/node": "^22.15.29"
+    "typescript": "^5.8.3"
   }
 }
