@@ -1,0 +1,22 @@
+{
+  "name": "geo-reforge",
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "check": "tsx scripts/01-check-compatibility.ts",
+    "scrape": "tsx scripts/02-scrape-site.ts",
+    "structure": "tsx scripts/03-structure-content.ts",
+    "generate": "tsx scripts/04-generate-site.ts",
+    "qa": "tsx scripts/05-quality-check.ts",
+    "run-all": "tsx scripts/01-check-compatibility.ts && tsx scripts/02-scrape-site.ts && tsx scripts/03-structure-content.ts && tsx scripts/04-generate-site.ts && tsx scripts/05-quality-check.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.3",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "@types/node": "^22.15.29"
+  }
+}
