@@ -39,7 +39,7 @@ const pages = pageFiles.map(file => {
   const slug = file.replace('.md', '');
   const content = readFileSync(resolve(pageDir, file), 'utf8');
   const meta = JSON.parse(readFileSync(resolve(pageDir, `${slug}.meta.json`), 'utf8'));
-  return { slug, content: content.slice(0, 8000), meta }; // trim for API
+  return { slug, content: content.slice(0, 2000), meta }; // trim — 2k chars is enough per page
 });
 
 // ── Schema ─────────────────────────────────────────────────────────────────────
@@ -111,54 +111,111 @@ Output a JSON object with:
 console.log(`\n🤖 Structuring content with Claude API...`);
 const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
+function extractJson(raw: string): unknown {
+  // Strip markdown code fences if present
+  const stripped = raw.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
+  const match = stripped.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('No JSON object found in Claude response');
+  return JSON.parse(match[0]);
+}
+
 const pagesSummary = pages.map(p =>
   `=== ${p.slug} (${p.meta.sourceURL ?? 'unknown'}) ===\n${p.content}`
 ).join('\n\n---\n\n');
 
-const userPrompt = `
-${DATA_CONTRACT}
+// ── Call 1: business + faq + colors (small, predictable output) ───────────────
+console.log('   Call 1/2: Extracting business info, FAQ, colors...');
+const call1 = await client.messages.create({
+  model: 'claude-sonnet-4-6',
+  max_tokens: 4096,
+  system: SYSTEM_PROMPT,
+  messages: [{
+    role: 'user',
+    content: `${DATA_CONTRACT}
 
 Scraped site: ${clientName}
 Pages:
 
 ${pagesSummary}
 
-Return a single JSON object:
+Return ONLY this JSON (no pages array):
 {
-  "business": { ...complete business.json... },
-  "pages": [ ...array of page objects with all frontmatter fields plus "body" string... ],
-  "faq": { "items": [ ...5+ Q&A from existing content only... ] },
+  "business": { ...complete business.json fields... },
+  "faq": { "items": [ ...up to 8 Q&A extracted from existing content only... ] },
   "colors": {
     "source": "extracted from original site",
     "active": "scheme-a",
     "schemes": [
       { "id": "scheme-a", "name": "Original", "colors": { "primary": "#...", "primary-light": "#...", "primary-dark": "#...", "bg": "#fff", "bg-alt": "#f8f9fa", "text": "#1a1a1a", "text-muted": "#6b7280", "accent": "#...", "border": "#e5e7eb" } },
-      { "id": "scheme-b", "name": "Warm", "colors": { ...warm variant... } },
-      { "id": "scheme-c", "name": "Cool", "colors": { ...cool variant... } }
+      { "id": "scheme-b", "name": "Warm", "colors": { "primary": "#...", "primary-light": "#...", "primary-dark": "#...", "bg": "#fffdf9", "bg-alt": "#fdf5ec", "text": "#1a1a1a", "text-muted": "#6b7280", "accent": "#...", "border": "#e8ddd4" } },
+      { "id": "scheme-c", "name": "Cool", "colors": { "primary": "#...", "primary-light": "#...", "primary-dark": "#...", "bg": "#fff", "bg-alt": "#f0f5f9", "text": "#1a1a1a", "text-muted": "#6b7280", "accent": "#...", "border": "#d8e4ed" } }
     ]
   }
-}`;
-
-const message = await client.messages.create({
-  model: 'claude-sonnet-4-6',
-  max_tokens: 8192,
-  messages: [{ role: 'user', content: userPrompt }],
-  system: SYSTEM_PROMPT,
+}`,
+  }],
 });
 
-const rawResponse = message.content[0].type === 'text' ? message.content[0].text : '';
-const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
-if (!jsonMatch) throw new Error('Claude did not return valid JSON');
+const r1 = extractJson(call1.content[0].type === 'text' ? call1.content[0].text : '') as {
+  business: object; faq: object; colors: object;
+};
 
-const structured = JSON.parse(jsonMatch[0]);
+// ── Call 2: pages array ───────────────────────────────────────────────────────
+console.log('   Call 2/2: Extracting page content...');
+const call2 = await client.messages.create({
+  model: 'claude-sonnet-4-6',
+  max_tokens: 8192,
+  system: SYSTEM_PROMPT,
+  messages: [{
+    role: 'user',
+    content: `${DATA_CONTRACT}
+
+Scraped site: ${clientName}
+Pages:
+
+${pagesSummary}
+
+Return ONLY a JSON array of page objects (no wrapping object):
+[
+  {
+    "slug": "ydelser/smertebehandling",
+    "title": "...",
+    "description": "...",
+    "pageType": "service",
+    "serviceName": "...",
+    "serviceDescription": "...",
+    "originalUrl": "...",
+    "isEmpty": false,
+    "order": 1,
+    "body": "...markdown body text..."
+  },
+  ...one object per unique service page found...
+]
+
+Rules:
+- Only include service pages (pageType="service") — skip home, contact, about, prices pages
+- slug must start with "ydelser/" for service pages
+- slug uses only lowercase letters, numbers, hyphens — no slashes except the prefix
+- isEmpty: true if page had no real content
+- body: the page's content in Danish, verbatim from scraped text`,
+  }],
+});
+
+const rawPages2 = call2.content[0].type === 'text' ? call2.content[0].text : '';
+const stripped2 = rawPages2.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
+const arrMatch = stripped2.match(/\[[\s\S]*\]/);
+if (!arrMatch) throw new Error('Claude call 2 did not return a JSON array');
+const pageObjects = JSON.parse(arrMatch[0]) as Array<{
+  slug: string; body?: string; [k: string]: unknown;
+}>;
 
 // Save outputs
-writeFileSync(resolve(dirs.structured, 'business.json'), JSON.stringify(structured.business, null, 2));
-writeFileSync(resolve(dirs.structured, 'faq.json'), JSON.stringify(structured.faq, null, 2));
-writeFileSync(resolve(dirs.structured, 'colors.json'), JSON.stringify(structured.colors, null, 2));
+writeFileSync(resolve(dirs.structured, 'business.json'), JSON.stringify(r1.business, null, 2));
+writeFileSync(resolve(dirs.structured, 'faq.json'), JSON.stringify(r1.faq, null, 2));
+writeFileSync(resolve(dirs.structured, 'colors.json'), JSON.stringify(r1.colors, null, 2));
 
-for (const page of structured.pages ?? []) {
+for (const page of pageObjects) {
   const { slug, body = '', ...frontmatter } = page;
+  if (!slug || slug.trim() === '') continue; // skip any bad slug
   const content = [
     '---',
     ...Object.entries(frontmatter).map(([k, v]) => `${k}: ${JSON.stringify(v)}`),
