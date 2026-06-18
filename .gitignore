@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+.astro/
+
+# Environment — NEVER commit
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/settings.json
+.idea/
+
+# Memtrace local index
+.memdb/
+
+# Lighthouse CI artifacts
+.lighthouseci/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Client raw data (may contain PII / scraped content)
+clients/*/raw/
+clients/*/site/dist/

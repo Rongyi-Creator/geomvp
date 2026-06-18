@@ -1,0 +1,108 @@
+---
+import businessData from '../data/business.json';
+
+const nav = [
+  { href: '/ydelser/', label: 'Behandling' },
+  { href: '/priser/',  label: 'Priser' },
+  { href: '/om/',      label: 'Om' },
+  { href: '/kontakt/', label: 'Kontakt' },
+];
+
+const currentPath = Astro.url.pathname;
+---
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a href="/" class="logo" aria-label={businessData.name}>
+      <span class="logo-text">{businessData.name}</span>
+    </a>
+
+    <nav aria-label="Primær navigation">
+      <ul>
+        {nav.map(item => (
+          <li>
+            <a
+              href={item.href}
+              aria-current={currentPath.startsWith(item.href) ? 'page' : undefined}
+            >
+              {item.label}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="header-phone">
+        {businessData.phone}
+      </a>
+      <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+        Book tid
+      </a>
+    </div>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
+    padding: var(--space-sm) 0;
+  }
+
+  .header-inner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+  }
+
+  .logo {
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+  .logo-text {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    color: var(--color-primary);
+  }
+
+  nav ul {
+    display: flex;
+    gap: var(--space-md);
+    list-style: none;
+    flex: 1;
+  }
+  nav a {
+    font-size: 0.95rem;
+    color: var(--color-text);
+    font-weight: 500;
+  }
+  nav a:hover,
+  nav a[aria-current="page"] {
+    color: var(--color-primary);
+    text-decoration: none;
+  }
+  nav a[aria-current="page"] {
+    border-bottom: 2px solid var(--color-primary);
+    padding-bottom: 2px;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    flex-shrink: 0;
+  }
+  .header-phone {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 767px) {
+    nav, .header-phone { display: none; }
+  }
+</style>

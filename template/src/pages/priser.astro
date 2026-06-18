@@ -1,0 +1,99 @@
+---
+import Layout from '../layouts/Layout.astro';
+import businessData from '../data/business.json';
+
+const title = `Priser og åbningstider — ${businessData.name}`;
+const description = `Se priser på akupunkturbehandlinger hos ${businessData.name} i ${businessData.address.city}. Første prøvebehandling 450 kr.`;
+
+const dayLabels: Record<string, string> = {
+  Monday: 'Mandag', Tuesday: 'Tirsdag', Wednesday: 'Onsdag',
+  Thursday: 'Torsdag', Friday: 'Fredag', Saturday: 'Lørdag', Sunday: 'Søndag',
+};
+
+const prices = [
+  { label: 'Første prøvebehandling (ca. 75 min)', price: '450 kr.' },
+  { label: 'Efterfølgende behandling (ca. 60 min)', price: '600 kr.' },
+];
+---
+
+<Layout title={title} description={description} pageType="prices">
+  <section>
+    <div class="container">
+      <h1>Priser og åbningstider — {businessData.name}</h1>
+
+      <div class="price-grid">
+        <!-- Prices -->
+        <div>
+          <h2>Behandlingspriser</h2>
+          <table class="mt-md">
+            <thead>
+              <tr>
+                <th>Behandling</th>
+                <th>Pris</th>
+              </tr>
+            </thead>
+            <tbody>
+              {prices.map(p => (
+                <tr>
+                  <td>{p.label}</td>
+                  <td><strong>{p.price}</strong></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div class="insurance-note mt-lg">
+            <h3>Forsikringsdækning</h3>
+            <p class="text-muted">Som RAB-godkendt akupunktør dækker følgende forsikringer:</p>
+            <ul class="trust-list mt-sm">
+              {businessData.insurance.map(ins => <li>{ins}</li>)}
+            </ul>
+          </div>
+        </div>
+
+        <!-- Opening hours -->
+        <div>
+          <h2>Åbningstider</h2>
+          <dl class="hours-table mt-md">
+            {businessData.hours.map(h => (
+              <>
+                <dt>{dayLabels[h.day] ?? h.day}</dt>
+                <dd>
+                  {h.open}–{h.close}
+                  {'note' in h && h.note ? <span class="note"> ({h.note})</span> : null}
+                </dd>
+              </>
+            ))}
+          </dl>
+        </div>
+      </div>
+
+      <div class="mt-xl text-center">
+        <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+          Book tid online
+        </a>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .price-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-2xl);
+    margin-top: var(--space-xl);
+  }
+  @media (min-width: 768px) {
+    .price-grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  .hours-table {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.4rem 2rem;
+  }
+  dt { font-weight: 600; }
+  .note { font-size: 0.85rem; color: var(--color-text-muted); }
+  .insurance-note h3 { margin-bottom: var(--space-xs); }
+</style>

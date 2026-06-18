@@ -1,0 +1,135 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getCollection } from 'astro:content';
+import businessData from '../data/business.json';
+
+const services = await getCollection('services');
+const sortedServices = services.sort((a, b) => a.data.order - b.data.order);
+
+const title = `${businessData.name} — Smertebehandling i ${businessData.address.city}`;
+const description = businessData.description;
+---
+
+<Layout title={title} description={description} pageType="home">
+
+  <!-- Hero -->
+  <section id="hero" class="hero">
+    <div class="container">
+      <h1>Akupunktur i {businessData.address.city} — Smertebehandling uden medicin</h1>
+      <p class="hero-sub">{businessData.description}</p>
+      <div class="hero-actions">
+        <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+          Book tid online
+        </a>
+        <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="btn btn-outline">
+          Ring {businessData.phone}
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Services -->
+  <section id="services">
+    <div class="container">
+      <h2>Behandlinger hos {businessData.name}</h2>
+      <p class="section-intro text-muted">Vi tilbyder en bred vifte af akupunkturbehandlinger.</p>
+      <div class="card-grid mt-md">
+        {sortedServices.filter(s => !s.data.isEmpty).map(service => (
+          <a href={`/ydelser/${service.id}/`} class="card service-card">
+            <h3>{service.data.serviceName}</h3>
+            <p class="text-muted">{service.data.serviceDescription}</p>
+            <span class="card-link">Læs mere →</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- About preview -->
+  <section id="about-preview">
+    <div class="container about-grid">
+      <div>
+        <h2>Om {businessData.practitioner.name}</h2>
+        <p>{businessData.aboutSummary}</p>
+        <ul class="trust-list mt-md">
+          {businessData.practitioner.credentials.map(c => <li>{c}</li>)}
+        </ul>
+        <a href="/om/" class="btn btn-outline mt-md">Læs mere om os</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Trust signals -->
+  <section id="trust">
+    <div class="container">
+      <h2>Forsikringsdækning</h2>
+      <p class="text-muted">Som RAB-godkendt akupunktør dækker følgende forsikringer:</p>
+      <ul class="trust-list mt-md">
+        {businessData.insurance.map(ins => <li>{ins}</li>)}
+      </ul>
+    </div>
+  </section>
+
+  <!-- Location -->
+  <section id="location">
+    <div class="container">
+      <h2>Beliggenhed</h2>
+      <address class="location-address">
+        <strong>{businessData.name}</strong><br />
+        {businessData.address.street}<br />
+        {businessData.address.zip} {businessData.address.city}
+      </address>
+      <a
+        href={businessData.googleMapsUrl}
+        class="btn btn-outline mt-md"
+        target="_blank"
+        rel="noopener"
+      >
+        Åbn i Google Maps
+      </a>
+    </div>
+  </section>
+
+  <!-- Bottom CTA -->
+  <section id="cta-bottom" class="cta-section">
+    <div class="container text-center">
+      <h2>Klar til at komme i gang?</h2>
+      <p class="text-muted">Book din første prøvebehandling — 450 kr. i ca. 75 min.</p>
+      <div class="hero-actions mt-md">
+        <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+          Book tid online
+        </a>
+        <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="btn btn-outline">
+          Ring {businessData.phone}
+        </a>
+      </div>
+    </div>
+  </section>
+
+</Layout>
+
+<style>
+  .hero {
+    background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%);
+    color: #fff;
+    padding: var(--space-2xl) 0;
+    text-align: center;
+  }
+  .hero h1 { color: #fff; font-size: var(--font-size-3xl); max-width: 750px; margin: 0 auto; }
+  .hero-sub { font-size: var(--font-size-lg); opacity: 0.9; margin-top: var(--space-sm); max-width: 600px; margin-inline: auto; }
+  .hero-actions { display: flex; gap: var(--space-sm); justify-content: center; flex-wrap: wrap; margin-top: var(--space-lg); }
+  .hero .btn-outline { border-color: #fff; color: #fff; }
+  .hero .btn-outline:hover { background: #fff; color: var(--color-primary-dark); }
+
+  .section-intro { margin-top: var(--space-xs); }
+
+  .service-card { display: block; text-decoration: none; color: inherit; }
+  .service-card h3 { color: var(--color-primary); margin-bottom: var(--space-xs); }
+  .card-link { display: inline-block; margin-top: var(--space-sm); color: var(--color-primary); font-weight: 600; font-size: 0.9rem; }
+
+  .about-grid { max-width: 700px; }
+
+  .location-address { font-style: normal; line-height: 1.8; }
+
+  .cta-section { background: var(--color-bg-alt); }
+</style>

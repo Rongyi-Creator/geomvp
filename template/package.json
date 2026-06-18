@@ -1,0 +1,22 @@
+{
+  "name": "geo-reforge-template",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "GEO-native Astro SSG template for local businesses",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "build:scheme-a": "COLOR_SCHEME=scheme-a astro build",
+    "build:scheme-b": "COLOR_SCHEME=scheme-b astro build",
+    "build:scheme-c": "COLOR_SCHEME=scheme-c astro build"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.3",
+    "astro": "^6.4.7"
+  }
+}

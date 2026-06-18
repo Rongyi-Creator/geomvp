@@ -1,0 +1,55 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { getCollection } from 'astro:content';
+import businessData from '../../data/business.json';
+
+const services = await getCollection('services');
+const sorted = services.sort((a, b) => a.data.order - b.data.order);
+const activeServices = sorted.filter(s => !s.data.isEmpty);
+const emptyServices = sorted.filter(s => s.data.isEmpty);
+
+const title = `Behandlinger hos ${businessData.name}`;
+const description = `Oversigt over alle akupunkturbehandlinger hos ${businessData.name} i ${businessData.address.city}. Smertebehandling, stress, allergi og meget mere.`;
+---
+
+<Layout title={title} description={description}>
+  <section>
+    <div class="container">
+      <h1>Behandlinger hos {businessData.name}</h1>
+      <p class="text-muted">Vi tilbyder akupunkturbehandlinger til en lang række tilstande. Alle behandlinger udføres af RAB-godkendt akupunkturlæge.</p>
+
+      <div class="card-grid mt-lg">
+        {activeServices.map(service => (
+          <a href={`/ydelser/${service.id}/`} class="card service-card">
+            <h2>{service.data.serviceName}</h2>
+            <p class="text-muted">{service.data.serviceDescription}</p>
+            <span class="card-link">Læs mere om behandlingen →</span>
+          </a>
+        ))}
+      </div>
+
+      {emptyServices.length > 0 && (
+        <div class="mt-xl">
+          <h2>Yderligere behandlinger</h2>
+          <p class="text-muted">Kontakt os for information om disse behandlinger.</p>
+          <ul class="empty-list mt-md">
+            {emptyServices.map(s => <li>{s.data.serviceName}</li>)}
+          </ul>
+        </div>
+      )}
+
+      <div class="mt-xl text-center">
+        <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+          Book en behandling
+        </a>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .service-card { display: block; text-decoration: none; color: inherit; }
+  .service-card h2 { font-size: var(--font-size-xl); color: var(--color-primary); margin-bottom: var(--space-xs); }
+  .card-link { display: inline-block; margin-top: var(--space-sm); color: var(--color-primary); font-weight: 600; font-size: 0.9rem; }
+  .empty-list { list-style: disc; padding-left: var(--space-md); color: var(--color-text-muted); line-height: 2; }
+</style>

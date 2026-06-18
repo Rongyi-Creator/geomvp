@@ -1,0 +1,137 @@
+---
+import Layout from '../layouts/Layout.astro';
+import businessData from '../data/business.json';
+
+const title = `Kontakt ${businessData.name}`;
+const description = `Kontakt ${businessData.name} i ${businessData.address.city}. Ring ${businessData.phone} eller book online. Adresse: ${businessData.address.street}, ${businessData.address.zip} ${businessData.address.city}.`;
+
+const dayLabels: Record<string, string> = {
+  Monday: 'Mandag', Tuesday: 'Tirsdag', Wednesday: 'Onsdag',
+  Thursday: 'Torsdag', Friday: 'Fredag', Saturday: 'Lørdag', Sunday: 'Søndag',
+};
+
+const mapsEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(businessData.address.street + ', ' + businessData.address.zip + ' ' + businessData.address.city)}&output=embed`;
+---
+
+<Layout title={title} description={description} pageType="contact">
+  <section>
+    <div class="container">
+      <h1>Kontakt {businessData.name}</h1>
+
+      <div class="contact-grid">
+
+        <!-- NAP + hours -->
+        <div>
+          <h2>Adresse og kontakt</h2>
+          <address class="nap mt-md">
+            <p class="nap-name">{businessData.name}</p>
+            <p>{businessData.address.street}</p>
+            <p>{businessData.address.zip} {businessData.address.city}</p>
+            <p class="mt-sm">
+              <strong>Telefon:</strong>
+              <a href={`tel:${businessData.phone.replace(/\s/g, '')}`}>{businessData.phone}</a>
+            </p>
+            <p>
+              <strong>Email:</strong>
+              <a href={`mailto:${businessData.email}`}>{businessData.email}</a>
+            </p>
+          </address>
+
+          <h2 class="mt-lg">Åbningstider</h2>
+          <dl class="hours-table mt-sm">
+            {businessData.hours.map(h => (
+              <>
+                <dt>{dayLabels[h.day] ?? h.day}</dt>
+                <dd>
+                  {h.open}–{h.close}
+                  {'note' in h && h.note ? <span class="note"> ({h.note})</span> : null}
+                </dd>
+              </>
+            ))}
+          </dl>
+
+          <div class="mt-lg cta-actions">
+            <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+              Book tid online
+            </a>
+            <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="btn btn-outline">
+              Ring nu
+            </a>
+          </div>
+        </div>
+
+        <!-- Map + transport -->
+        <div>
+          <h2>Find os</h2>
+          <div class="map-container mt-md">
+            <iframe
+              src={mapsEmbedUrl}
+              width="100%"
+              height="350"
+              style="border:0; border-radius: var(--radius);"
+              allowfullscreen
+              loading="lazy"
+              referrerpolicy="no-referrer-when-downgrade"
+              title={`Kort over ${businessData.name}`}
+            ></iframe>
+          </div>
+
+          <h3 class="mt-lg">Transport</h3>
+          <ul class="transport-list mt-sm">
+            <li><strong>S-tog:</strong> Vangede station (linje B) — kort gang</li>
+            <li><strong>Bus:</strong> Linjerne 164, 4A, 6A</li>
+            <li><strong>Parkering:</strong> Tilgængelig ved klinikken</li>
+          </ul>
+
+          <a
+            href={businessData.googleMapsUrl}
+            class="btn btn-outline mt-md"
+            target="_blank"
+            rel="noopener"
+          >
+            Åbn i Google Maps
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .contact-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-2xl);
+    margin-top: var(--space-xl);
+  }
+  @media (min-width: 768px) {
+    .contact-grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  address { font-style: normal; }
+  .nap-name { font-size: var(--font-size-lg); font-weight: 700; margin-bottom: var(--space-xs); }
+  .nap p { line-height: 1.8; }
+  .nap a { color: var(--color-primary); }
+
+  .hours-table {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.4rem 2rem;
+    font-size: 0.95rem;
+  }
+  dt { font-weight: 600; }
+  .note { font-size: 0.82rem; color: var(--color-text-muted); }
+
+  .cta-actions { display: flex; gap: var(--space-sm); flex-wrap: wrap; }
+
+  .map-container { border-radius: var(--radius); overflow: hidden; }
+
+  .transport-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+  }
+</style>

@@ -1,0 +1,62 @@
+---
+import businessData from '../data/business.json';
+
+interface Props {
+  pageType?: 'home' | 'service' | 'faq' | 'contact' | 'about' | 'prices';
+  serviceData?: { name: string; description: string };
+  faqItems?: Array<{ question: string; answer: string }>;
+}
+
+const { pageType = 'home', serviceData, faqItems } = Astro.props;
+
+const localBusiness = {
+  "@context": "https://schema.org",
+  "@type": businessData.schemaType || "LocalBusiness",
+  "name": businessData.name,
+  "description": businessData.description,
+  "url": businessData.website,
+  "telephone": businessData.phone,
+  "email": businessData.email,
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": businessData.address.street,
+    "addressLocality": businessData.address.city,
+    "postalCode": businessData.address.zip,
+    "addressCountry": businessData.address.country
+  },
+  "geo": {
+    "@type": "GeoCoordinates",
+    "latitude": businessData.geo.lat,
+    "longitude": businessData.geo.lng
+  },
+  "openingHoursSpecification": businessData.hours.map(h => ({
+    "@type": "OpeningHoursSpecification",
+    "dayOfWeek": h.day,
+    "opens": h.open,
+    "closes": h.close
+  })),
+  "sameAs": businessData.sameAs || []
+};
+
+const serviceSchema = pageType === 'service' && serviceData ? {
+  "@context": "https://schema.org",
+  "@type": "Service",
+  "name": serviceData.name,
+  "description": serviceData.description,
+  "provider": { "@type": "LocalBusiness", "name": businessData.name }
+} : null;
+
+const faqSchema = pageType === 'faq' && faqItems ? {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": faqItems.map(item => ({
+    "@type": "Question",
+    "name": item.question,
+    "acceptedAnswer": { "@type": "Answer", "text": item.answer }
+  }))
+} : null;
+---
+
+<script type="application/ld+json" set:html={JSON.stringify(localBusiness)} />
+{serviceSchema && <script type="application/ld+json" set:html={JSON.stringify(serviceSchema)} />}
+{faqSchema && <script type="application/ld+json" set:html={JSON.stringify(faqSchema)} />}

@@ -1,0 +1,40 @@
+{
+  "name": "Virum Akupunktur",
+  "schemaType": "MedicalBusiness",
+  "description": "Godkendt kinesisk RAB akupunkturlæge i Virum. Specialiseret i smertebehandling, stress og allergier.",
+  "phone": "+45 25 72 42 65",
+  "email": "jie.luan@outlook.com",
+  "website": "https://virumakupunktur.dk",
+  "bookingUrl": "https://virumakupunktur.planway.com",
+  "facebookUrl": "https://facebook.com/profile.php?id=100006357108954",
+  "trustpilotUrl": "",
+  "googleMapsUrl": "https://www.google.com/maps/search/?api=1&query=Virum+Akupunktur+Dalstrøget+78",
+  "address": {
+    "street": "Dalstrøget 78, 4",
+    "city": "Dyssegård",
+    "zip": "2870",
+    "country": "DK"
+  },
+  "geo": {
+    "lat": 55.7500,
+    "lng": 12.4800
+  },
+  "hours": [
+    { "day": "Monday",    "open": "09:00", "close": "18:00" },
+    { "day": "Tuesday",   "open": "09:00", "close": "18:00" },
+    { "day": "Wednesday", "open": "09:00", "close": "18:00" },
+    { "day": "Thursday",  "open": "09:00", "close": "18:00" },
+    { "day": "Friday",    "open": "09:00", "close": "18:00" },
+    { "day": "Saturday",  "open": "09:00", "close": "18:00", "note": "efter telefon aftale" },
+    { "day": "Sunday",    "open": "09:00", "close": "18:00", "note": "efter telefon aftale" }
+  ],
+  "practitioner": {
+    "name": "Luan",
+    "title": "Akupunkturlæge",
+    "credentials": ["RAB-godkendt", "Uddannet i Traditionel Kinesisk Medicin"],
+    "specialties": ["Smertebehandling", "Hovedpine", "Stress", "Allergi"]
+  },
+  "insurance": ["Sygeforsikringen Danmark", "PFA", "Danica", "Pensam", "AP Pension", "TopDanmark"],
+  "sameAs": [],
+  "aboutSummary": "Kinesisk RAB-godkendt akupunkturlæge i Virum med speciale i smertebehandling, hovedpine, søvnløshed, stress og allergi."
+}

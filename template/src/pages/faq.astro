@@ -1,0 +1,48 @@
+---
+import Layout from '../layouts/Layout.astro';
+import businessData from '../data/business.json';
+import faqData from '../data/faq.json';
+
+const title = `Ofte stillede spørgsmål — ${businessData.name}`;
+const description = `Svar på de mest stillede spørgsmål om akupunktur hos ${businessData.name} i ${businessData.address.city}. Priser, forsikring, behandlingsforløb og meget mere.`;
+---
+
+<Layout
+  title={title}
+  description={description}
+  pageType="faq"
+  faqItems={faqData.items}
+>
+  <section>
+    <div class="container">
+      <h1>Ofte stillede spørgsmål — {businessData.name}</h1>
+      <p class="text-muted">Find svar på de mest almindelige spørgsmål om akupunktur og vores klinik.</p>
+
+      <div class="faq-list mt-xl">
+        {faqData.items.map(item => (
+          <details>
+            <summary>{item.question}</summary>
+            <div>{item.answer}</div>
+          </details>
+        ))}
+      </div>
+
+      <div class="mt-xl faq-cta">
+        <p>Har du et spørgsmål, der ikke er besvaret her?</p>
+        <div class="cta-actions mt-sm">
+          <a href="/kontakt/" class="btn btn-primary">Kontakt os</a>
+          <a href={businessData.bookingUrl} class="btn btn-outline" target="_blank" rel="noopener">
+            Book tid online
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .faq-list { max-width: 720px; }
+  .faq-cta { padding: var(--space-xl); background: var(--color-bg-alt); border-radius: var(--radius); max-width: 720px; }
+  .faq-cta p { font-size: var(--font-size-lg); font-weight: 600; }
+  .cta-actions { display: flex; gap: var(--space-sm); flex-wrap: wrap; }
+</style>

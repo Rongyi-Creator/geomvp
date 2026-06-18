@@ -1,0 +1,93 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { getCollection, render } from 'astro:content';
+import businessData from '../../data/business.json';
+
+export async function getStaticPaths() {
+  const services = await getCollection('services');
+  return services.map(service => ({
+    params: { slug: service.id },
+    props: { service },
+  }));
+}
+
+const { service } = Astro.props;
+const { Content } = await render(service);
+
+const title = service.data.title;
+const description = service.data.description;
+---
+
+<Layout
+  title={title}
+  description={description}
+  pageType="service"
+  serviceData={{ name: service.data.serviceName, description: service.data.serviceDescription }}
+  noindex={service.data.isEmpty}
+>
+  <article class="service-article">
+    <div class="container">
+
+      <header class="article-header">
+        <h1>{service.data.serviceName} — {businessData.name}, {businessData.address.city}</h1>
+        <p class="text-muted">{service.data.serviceDescription}</p>
+      </header>
+
+      {service.data.isEmpty ? (
+        <div class="empty-notice">
+          <p>Vi tilbyder {service.data.serviceName.toLowerCase()} behandling. Kontakt os for mere information.</p>
+          <a href="/kontakt/" class="btn btn-primary mt-md">Kontakt os</a>
+        </div>
+      ) : (
+        <div class="article-body">
+          <Content />
+        </div>
+      )}
+
+      <aside class="article-cta">
+        <h2>Book en behandling</h2>
+        <p>Første prøvebehandling: 450 kr. (ca. 75 min)</p>
+        <div class="cta-actions">
+          <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+            Book tid online
+          </a>
+          <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="btn btn-outline">
+            Ring {businessData.phone}
+          </a>
+        </div>
+      </aside>
+
+      <nav class="article-nav" aria-label="Andre behandlinger">
+        <a href="/ydelser/">← Alle behandlinger</a>
+      </nav>
+
+    </div>
+  </article>
+</Layout>
+
+<style>
+  .service-article { padding: var(--space-section) 0; }
+  .article-header { margin-bottom: var(--space-xl); border-bottom: 1px solid var(--color-border); padding-bottom: var(--space-lg); }
+  .article-header h1 { font-size: var(--font-size-2xl); }
+  .article-header p { margin-top: var(--space-xs); font-size: var(--font-size-lg); }
+
+  .article-body { max-width: 720px; }
+  .article-body :global(h2) { margin-top: var(--space-xl); margin-bottom: var(--space-sm); }
+  .article-body :global(p) { margin-bottom: var(--space-sm); }
+  .article-body :global(ul) { padding-left: var(--space-md); margin-bottom: var(--space-sm); }
+
+  .empty-notice { padding: var(--space-xl); background: var(--color-bg-alt); border-radius: var(--radius); }
+
+  .article-cta {
+    margin-top: var(--space-2xl);
+    padding: var(--space-xl);
+    background: var(--color-bg-alt);
+    border-radius: var(--radius);
+    border-left: 4px solid var(--color-primary);
+  }
+  .article-cta h2 { font-size: var(--font-size-xl); margin-bottom: var(--space-xs); }
+  .cta-actions { display: flex; gap: var(--space-sm); flex-wrap: wrap; margin-top: var(--space-md); }
+
+  .article-nav { margin-top: var(--space-xl); padding-top: var(--space-md); border-top: 1px solid var(--color-border); }
+  .article-nav a { color: var(--color-primary); font-weight: 500; }
+</style>

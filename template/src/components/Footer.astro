@@ -1,0 +1,135 @@
+---
+import businessData from '../data/business.json';
+
+const year = new Date().getFullYear();
+const dayLabels: Record<string, string> = {
+  Monday: 'Mandag', Tuesday: 'Tirsdag', Wednesday: 'Onsdag',
+  Thursday: 'Torsdag', Friday: 'Fredag', Saturday: 'Lørdag', Sunday: 'Søndag',
+};
+---
+
+<footer class="site-footer">
+  <div class="container footer-grid">
+
+    <!-- NAP block — must match JSON-LD exactly -->
+    <div class="footer-col">
+      <p class="footer-brand">{businessData.name}</p>
+      <address>
+        <p>{businessData.address.street}</p>
+        <p>{businessData.address.zip} {businessData.address.city}</p>
+        <p>
+          <a href={`tel:${businessData.phone.replace(/\s/g, '')}`}>{businessData.phone}</a>
+        </p>
+        <p>
+          <a href={`mailto:${businessData.email}`}>{businessData.email}</a>
+        </p>
+      </address>
+    </div>
+
+    <!-- Opening hours -->
+    <div class="footer-col">
+      <p class="footer-heading">Åbningstider</p>
+      <dl class="hours-list">
+        {businessData.hours.map(h => (
+          <>
+            <dt>{dayLabels[h.day] ?? h.day}</dt>
+            <dd>
+              {h.open}–{h.close}
+              {'note' in h && h.note ? <span class="hours-note"> ({h.note})</span> : null}
+            </dd>
+          </>
+        ))}
+      </dl>
+    </div>
+
+    <!-- External links -->
+    <div class="footer-col">
+      <p class="footer-heading">Links</p>
+      <ul class="footer-links">
+        <li><a href={businessData.bookingUrl} target="_blank" rel="noopener">Book tid online</a></li>
+        {businessData.googleMapsUrl && (
+          <li><a href={businessData.googleMapsUrl} target="_blank" rel="noopener">Google Maps</a></li>
+        )}
+        {businessData.facebookUrl && (
+          <li><a href={businessData.facebookUrl} target="_blank" rel="noopener">Facebook</a></li>
+        )}
+        {businessData.trustpilotUrl && (
+          <li><a href={businessData.trustpilotUrl} target="_blank" rel="noopener">Trustpilot</a></li>
+        )}
+      </ul>
+    </div>
+
+  </div>
+
+  <div class="footer-bottom">
+    <div class="container">
+      <p>© {year} {businessData.name}</p>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    background: var(--color-primary-dark);
+    color: #fff;
+    padding-top: var(--space-xl);
+  }
+
+  .footer-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-xl);
+  }
+  @media (min-width: 640px) {
+    .footer-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  .footer-brand {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    margin-bottom: var(--space-sm);
+    color: #fff;
+  }
+  .footer-heading {
+    font-weight: 700;
+    margin-bottom: var(--space-sm);
+    color: rgba(255,255,255,0.7);
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+  }
+
+  address { font-style: normal; line-height: 1.8; }
+  address a { color: rgba(255,255,255,0.85); }
+  address a:hover { color: #fff; }
+
+  .hours-list {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.2rem 1rem;
+    font-size: 0.9rem;
+  }
+  dt { color: rgba(255,255,255,0.7); }
+  dd { color: rgba(255,255,255,0.9); }
+  .hours-note { font-size: 0.8rem; color: rgba(255,255,255,0.55); }
+
+  .footer-links {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .footer-links a {
+    color: rgba(255,255,255,0.85);
+    font-size: 0.95rem;
+  }
+  .footer-links a:hover { color: #fff; }
+
+  .footer-bottom {
+    margin-top: var(--space-xl);
+    border-top: 1px solid rgba(255,255,255,0.15);
+    padding: var(--space-sm) 0;
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.5);
+  }
+</style>

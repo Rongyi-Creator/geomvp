@@ -1,0 +1,49 @@
+---
+import Layout from '../layouts/Layout.astro';
+import businessData from '../data/business.json';
+
+const { practitioner } = businessData;
+const title = `Om ${practitioner.name} — ${businessData.name}`;
+const description = `Lær ${practitioner.name} at kende — ${practitioner.title} hos ${businessData.name} i ${businessData.address.city}. ${businessData.aboutSummary}`;
+---
+
+<Layout title={title} description={description} pageType="about">
+  <section>
+    <div class="container">
+      <h1>Om {practitioner.name} — {businessData.name}</h1>
+
+      <div class="about-grid">
+        <div class="about-content">
+          <p class="intro-text">{businessData.aboutSummary}</p>
+
+          <h2 class="mt-lg">Uddannelse og certificeringer</h2>
+          <ul class="trust-list mt-sm">
+            {practitioner.credentials.map(c => <li>{c}</li>)}
+          </ul>
+
+          <h2 class="mt-lg">Specialeområder</h2>
+          <ul class="trust-list mt-sm">
+            {practitioner.specialties.map(s => <li>{s}</li>)}
+          </ul>
+
+          <h2 class="mt-lg">Forsikringsdækning</h2>
+          <p class="text-muted">Som RAB-godkendt akupunktør er behandlingerne dækket af:</p>
+          <ul class="trust-list mt-sm">
+            {businessData.insurance.map(ins => <li>{ins}</li>)}
+          </ul>
+
+          <div class="mt-xl">
+            <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+              Book en tid
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .about-grid { max-width: 720px; margin-top: var(--space-xl); }
+  .intro-text { font-size: var(--font-size-lg); line-height: 1.7; color: var(--color-text); }
+</style>
