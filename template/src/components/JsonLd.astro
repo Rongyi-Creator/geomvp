@@ -24,11 +24,13 @@ const localBusiness = {
     "postalCode": businessData.address.zip,
     "addressCountry": businessData.address.country
   },
-  "geo": {
-    "@type": "GeoCoordinates",
-    "latitude": businessData.geo.lat,
-    "longitude": businessData.geo.lng
-  },
+  ...(businessData.geo?.lat && businessData.geo?.lng ? {
+    "geo": {
+      "@type": "GeoCoordinates",
+      "latitude": businessData.geo.lat,
+      "longitude": businessData.geo.lng
+    }
+  } : {}),
   "openingHoursSpecification": businessData.hours.map(h => ({
     "@type": "OpeningHoursSpecification",
     "dayOfWeek": h.day,

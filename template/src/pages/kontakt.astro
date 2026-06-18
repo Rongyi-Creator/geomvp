@@ -3,7 +3,7 @@ import Layout from '../layouts/Layout.astro';
 import businessData from '../data/business.json';
 
 const title = `Kontakt ${businessData.name}`;
-const description = `Kontakt ${businessData.name} i ${businessData.address.city}. Ring ${businessData.phone} eller book online. Adresse: ${businessData.address.street}, ${businessData.address.zip} ${businessData.address.city}.`;
+const description = `Kontakt ${businessData.name} i ${businessData.address.city}. ${businessData.phone ? `Ring ${businessData.phone} eller book online.` : 'Book online.'} Adresse: ${[businessData.address.street, businessData.address.zip, businessData.address.city].filter(Boolean).join(', ')}.`;
 
 const dayLabels: Record<string, string> = {
   Monday: 'Mandag', Tuesday: 'Tirsdag', Wednesday: 'Onsdag',
@@ -27,14 +27,18 @@ const mapsEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(busine
             <p class="nap-name">{businessData.name}</p>
             <p>{businessData.address.street}</p>
             <p>{businessData.address.zip} {businessData.address.city}</p>
-            <p class="mt-sm">
-              <strong>Telefon:</strong>
-              <a href={`tel:${businessData.phone.replace(/\s/g, '')}`}>{businessData.phone}</a>
-            </p>
-            <p>
-              <strong>Email:</strong>
-              <a href={`mailto:${businessData.email}`}>{businessData.email}</a>
-            </p>
+            {businessData.phone && (
+              <p class="mt-sm">
+                <strong>Telefon:</strong>
+                <a href={`tel:${businessData.phone.replace(/\s/g, '')}`}>{businessData.phone}</a>
+              </p>
+            )}
+            {businessData.email && (
+              <p>
+                <strong>Email:</strong>
+                <a href={`mailto:${businessData.email}`}>{businessData.email}</a>
+              </p>
+            )}
           </address>
 
           <h2 class="mt-lg">Åbningstider</h2>
@@ -51,12 +55,16 @@ const mapsEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(busine
           </dl>
 
           <div class="mt-lg cta-actions">
-            <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
-              Book tid online
-            </a>
-            <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="btn btn-outline">
-              Ring nu
-            </a>
+            {businessData.bookingUrl && (
+              <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+                Book tid online
+              </a>
+            )}
+            {businessData.phone && (
+              <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="btn btn-outline">
+                Ring nu
+              </a>
+            )}
           </div>
         </div>
 

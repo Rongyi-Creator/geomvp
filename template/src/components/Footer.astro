@@ -17,12 +17,12 @@ const dayLabels: Record<string, string> = {
       <address>
         <p>{businessData.address.street}</p>
         <p>{businessData.address.zip} {businessData.address.city}</p>
-        <p>
-          <a href={`tel:${businessData.phone.replace(/\s/g, '')}`}>{businessData.phone}</a>
-        </p>
-        <p>
-          <a href={`mailto:${businessData.email}`}>{businessData.email}</a>
-        </p>
+        {businessData.phone && (
+          <p><a href={`tel:${businessData.phone.replace(/\s/g, '')}`}>{businessData.phone}</a></p>
+        )}
+        {businessData.email && (
+          <p><a href={`mailto:${businessData.email}`}>{businessData.email}</a></p>
+        )}
       </address>
     </div>
 

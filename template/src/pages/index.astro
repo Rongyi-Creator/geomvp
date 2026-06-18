@@ -18,12 +18,16 @@ const description = businessData.description;
       <h1>Akupunktur i {businessData.address.city} — Smertebehandling uden medicin</h1>
       <p class="hero-sub">{businessData.description}</p>
       <div class="hero-actions">
-        <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
-          Book tid online
-        </a>
-        <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="btn btn-outline">
-          Ring {businessData.phone}
-        </a>
+        {businessData.bookingUrl && (
+          <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+            Book tid online
+          </a>
+        )}
+        {businessData.phone && (
+          <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="btn btn-outline">
+            Ring {businessData.phone}
+          </a>
+        )}
       </div>
     </div>
   </section>
@@ -49,7 +53,7 @@ const description = businessData.description;
   <section id="about-preview">
     <div class="container about-grid">
       <div>
-        <h2>Om {businessData.practitioner.name}</h2>
+        <h2>Om {businessData.practitioner.name ?? businessData.name}</h2>
         <p>{businessData.aboutSummary}</p>
         <ul class="trust-list mt-md">
           {businessData.practitioner.credentials.map(c => <li>{c}</li>)}
@@ -79,14 +83,16 @@ const description = businessData.description;
         {businessData.address.street}<br />
         {businessData.address.zip} {businessData.address.city}
       </address>
-      <a
-        href={businessData.googleMapsUrl}
-        class="btn btn-outline mt-md"
-        target="_blank"
-        rel="noopener"
-      >
-        Åbn i Google Maps
-      </a>
+      {businessData.googleMapsUrl && (
+        <a
+          href={businessData.googleMapsUrl}
+          class="btn btn-outline mt-md"
+          target="_blank"
+          rel="noopener"
+        >
+          Åbn i Google Maps
+        </a>
+      )}
     </div>
   </section>
 
@@ -96,12 +102,16 @@ const description = businessData.description;
       <h2>Klar til at komme i gang?</h2>
       <p class="text-muted">Book din første prøvebehandling — 450 kr. i ca. 75 min.</p>
       <div class="hero-actions mt-md">
-        <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
-          Book tid online
-        </a>
-        <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="btn btn-outline">
-          Ring {businessData.phone}
-        </a>
+        {businessData.bookingUrl && (
+          <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+            Book tid online
+          </a>
+        )}
+        {businessData.phone && (
+          <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="btn btn-outline">
+            Ring {businessData.phone}
+          </a>
+        )}
       </div>
     </div>
   </section>

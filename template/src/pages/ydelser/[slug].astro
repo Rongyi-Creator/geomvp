@@ -48,12 +48,16 @@ const description = service.data.description;
         <h2>Book en behandling</h2>
         <p>Første prøvebehandling: 450 kr. (ca. 75 min)</p>
         <div class="cta-actions">
-          <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
-            Book tid online
-          </a>
-          <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="btn btn-outline">
-            Ring {businessData.phone}
-          </a>
+          {businessData.bookingUrl && (
+            <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+              Book tid online
+            </a>
+          )}
+          {businessData.phone && (
+            <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="btn btn-outline">
+              Ring {businessData.phone}
+            </a>
+          )}
         </div>
       </aside>
 

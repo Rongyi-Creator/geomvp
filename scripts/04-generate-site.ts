@@ -60,18 +60,14 @@ for (const [key, val] of Object.entries(colorVars)) {
 }
 writeFileSync(themePath, themeCSS);
 
-// Copy structured pages (remove sample content first)
-const existingMd = readdirSync(contentDir).filter(f => f.endsWith('.md'));
-for (const f of existingMd) {
-  // keep sample files if no structured pages exist
-}
-
+// Replace template sample files with structured pages
 const structuredPages = readdirSync(dirs.pages)
   .filter(f => f.endsWith('.md') && !f.startsWith('.') && f.length > 3);
+
 if (structuredPages.length > 0) {
-  // Remove sample content
-  for (const f of existingMd) {
-    writeFileSync(resolve(contentDir, f), ''); // clear; can't delete easily
+  // Delete all existing .md files (template samples) from the content dir
+  for (const f of readdirSync(contentDir).filter(f => f.endsWith('.md'))) {
+    rmSync(resolve(contentDir, f));
   }
   // Write structured pages
   for (const f of structuredPages) {

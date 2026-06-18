@@ -33,12 +33,16 @@ const currentPath = Astro.url.pathname;
     </nav>
 
     <div class="header-actions">
-      <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="header-phone">
-        {businessData.phone}
-      </a>
-      <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
-        Book tid
-      </a>
+      {businessData.phone && (
+        <a href={`tel:${businessData.phone.replace(/\s/g, '')}`} class="header-phone">
+          {businessData.phone}
+        </a>
+      )}
+      {businessData.bookingUrl && (
+        <a href={businessData.bookingUrl} class="btn btn-primary" target="_blank" rel="noopener">
+          Book tid
+        </a>
+      )}
     </div>
   </div>
 </header>
