@@ -54,6 +54,24 @@ if (existsSync(dirs.assets)) {
   cpSync(dirs.assets, distAssets, { recursive: true });
 }
 
+// Patch CSS: remove builder rules that hide content (Playwright rendered it visible,
+// but the CSS still has the original hiding rules)
+const distCssDir = resolve(distDir, '_assets', 'css');
+if (existsSync(distCssDir)) {
+  for (const cssFile of readdirSync(distCssDir).filter(f => f.endsWith('.css'))) {
+    const cssPath = resolve(distCssDir, cssFile);
+    let css = readFileSync(cssPath, 'utf8');
+    // Replace visibility:hidden on .template (one.com)
+    css = css.replace(/\.template\s*\{([^}]*?)visibility\s*:\s*hidden/g, '.template{$1visibility:visible');
+    // Replace height:0!important on rows inside .template (one.com mobile mode)
+    css = css.replace(/\.template\.mobileViewLoaded\b[^}]*height\s*:\s*0\s*!important[^}]*/g, (m) =>
+      m.replace(/height\s*:\s*0\s*!important/g, 'height:auto!important')
+        .replace(/min-height\s*:\s*0\s*!important/g, 'min-height:auto!important')
+    );
+    writeFileSync(cssPath, css);
+  }
+}
+
 console.log(`\n🔧 Injecting GEO layer into ${pageMap.length} pages...\n`);
 
 // ── Process each page ────────────────────────────────────────────────────────
@@ -76,18 +94,20 @@ for (const page of pageMap) {
   // 1. Set lang attribute
   $('html').attr('lang', lang);
 
-  // 2. Strip client-side JavaScript (keep JSON-LD scripts)
+  // 2. Clean up builder artifacts (mobile duplicates, consent banners)
+  cleanBuilderArtifacts($);
+
+  // 3. Strip client-side JavaScript (keep JSON-LD scripts)
   $('script').each((_, el) => {
     const type = $(el).attr('type');
-    if (type === 'application/ld+json') return; // keep existing JSON-LD
+    if (type === 'application/ld+json') return;
     $(el).remove();
   });
 
-  // 2b. Fix CSS visibility — builder platforms use JS to control visibility.
-  //     Without JS, content may be hidden. Inject overrides to force it visible.
-  fixBuilderVisibility($);
+  // 3b. Visibility safety net
+  ensureVisibility($);
 
-  // 3. Remove tracking/analytics elements
+  // 4. Remove tracking/analytics elements
   $('noscript').each((_, el) => {
     const content = $(el).html() || '';
     if (/google|analytics|facebook|pixel|track/i.test(content)) {
@@ -215,65 +235,51 @@ console.log(`\nNext: pnpm clone:qa ${clientName}`);
 // Helpers
 // ══════════════════════════════════════════════════════════════════════════════
 
-function fixBuilderVisibility($: cheerio.CheerioAPI) {
-  // Builder platforms (one.com, Wix, Squarespace, etc.) use JS to control
-  // layout and visibility. Without JS, content stays hidden. This function
-  // detects builder patterns and injects CSS overrides to force visibility.
+function cleanBuilderArtifacts($: cheerio.CheerioAPI) {
+  // Remove cookie/consent banners baked into the rendered DOM
+  // Use specific selectors — [class*="termly"] would match <body> which has termly class
+  $('#termly-code-snippet-support').remove();
+  $('div[class^="termly-"]').remove();
+  $('button[class*="termly-"]').remove();
+  $('[id*="cookie-banner"], [class*="cookie-banner"]').remove();
+  $('[id*="consent-banner"]').remove();
+  // Strip termly classes from body
+  const bodyClass = $('body').attr('class') || '';
+  if (bodyClass.includes('termly')) {
+    $('body').attr('class', bodyClass.replace(/\btermly-[\w-]*/g, '').trim());
+  }
+  $('.announcement-banner-container, .announcement-popup-container').remove();
 
-  const overrides: string[] = [
-    'body { opacity: 1 !important; visibility: visible !important; }',
-  ];
-
-  // ── one.com builder ────────────────────────────────────────────────
+  // ── one.com: remove mobile-only header (duplicate nav, no content)
   if ($('.mm-mobile-preview').length > 0 || $('.template').length > 0) {
-    // The page has two renderings: mobile (.mm-mobile-preview) and desktop (.template).
-    // Desktop (.template) is the full content; mobile is header-only.
-    // JS normally hides mobile preview and shows desktop. Without JS, neither shows.
-
-    // Hide the mobile-only header (incomplete — only has nav, not content)
     $('.mm-mobile-preview').remove();
-
-    // Force the desktop template visible with correct layout
-    overrides.push(
-      '.template { display: block !important; max-width: 100% !important; visibility: visible !important; }',
-      '.template * { visibility: visible !important; }',
-      '.template .row, .template > .row { height: auto !important; min-height: auto !important; overflow: visible !important; }',
-      '.template .col { height: auto !important; }',
-      // Sections/blocks: ensure they stack and show
-      '[data-kind="SECTION"], [data-kind="Block"] { display: block !important; position: relative !important; }',
-      '.Preview_row__3Fkye { display: flex !important; flex-wrap: wrap !important; height: auto !important; min-height: auto !important; overflow: visible !important; }',
-      '.Preview_column__1KeVx { display: block !important; }',
-      '.Preview_block__16Zmu { display: block !important; position: relative !important; }',
-      '.Preview_componentWrapper__2i4QI { display: block !important; }',
-      '.Preview_component__SbiKo { display: block !important; }',
-      '.Preview_mobileHide__9T929 { display: block !important; }',
-      // Background sections
-      '.StripPreview_backgroundComponent__3YmQM { position: relative !important; }',
-      '.Background_backgroundComponent__3_1Ea { position: relative !important; min-height: 50px !important; }',
-    );
-
-    // Remove data-mobile-view attribute to prevent mobile CSS rules
+    $('#wsb-mobile-header').remove();
     $('.template').removeAttr('data-mobile-view');
+    $('style').each((_, el) => {
+      const text = $(el).html() || '';
+      if (text.includes('.template { visibility: hidden }') || text.includes('.template{visibility:hidden}')) {
+        $(el).html(text
+          .replace('.template { visibility: hidden }', '.template { visibility: visible }')
+          .replace('.template{visibility:hidden}', '.template{visibility:visible}')
+        );
+      }
+    });
   }
 
-  // ── Wix ────────────────────────────────────────────────────────────
-  if ($('[data-mesh-id]').length > 0) {
-    overrides.push(
-      '[data-mesh-id] { opacity: 1 !important; visibility: visible !important; }',
-      '#SITE_CONTAINER { opacity: 1 !important; }',
-    );
-  }
+  // ── Wix: consent manager overlays
+  $('[id*="consentManager"]').remove();
 
-  // ── Squarespace ────────────────────────────────────────────────────
-  if ($('.sqs-block-content').length > 0) {
-    overrides.push('.sqs-block-content { opacity: 1 !important; visibility: visible !important; }');
-  }
+  // ── Squarespace: cookie policy banner
+  $('[class*="cookie-policy"]').remove();
+}
 
-  // ── GoDaddy / website-builder ──────────────────────────────────────
-  if ($('[data-ux]').length > 0) {
-    overrides.push('[data-ux] { opacity: 1 !important; visibility: visible !important; }');
-  }
-
+function ensureVisibility($: cheerio.CheerioAPI) {
+  const overrides = [
+    'body { opacity: 1 !important; visibility: visible !important; }',
+    '*, *::before, *::after { transition: none !important; animation: none !important; }',
+    '.template { visibility: visible !important; display: block !important; }',
+    '.template * { visibility: visible !important; }',
+  ];
   $('head').append(`<style id="geo-visibility-fix">\n${overrides.join('\n')}\n</style>`);
 }
 

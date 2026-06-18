@@ -94,6 +94,42 @@
     padding: 24px 24px 0;
   }
 
+  /* ── Pipeline toggle ───────────────────────────────── */
+  .pipeline-toggle {
+    display: flex;
+    gap: 0;
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    width: fit-content;
+  }
+  .pipeline-btn {
+    padding: 8px 20px;
+    background: var(--surface);
+    border: none;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pipeline-btn:not(:last-child) { border-right: 1px solid var(--border); }
+  .pipeline-btn:hover { background: var(--surface2); color: var(--text); }
+  .pipeline-btn.active { background: var(--primary-d); color: var(--primary-l); }
+  .pipeline-tag {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 2px 5px;
+    border-radius: 3px;
+    background: var(--primary);
+    color: #fff;
+  }
+
   /* ── Inputs ─────────────────────────────────────────── */
   .inputs {
     display: grid;
@@ -101,6 +137,9 @@
     gap: 10px;
     align-items: end;
     margin-bottom: 20px;
+  }
+  .inputs.clone-mode {
+    grid-template-columns: 1fr 1fr;
   }
   .field { display: flex; flex-direction: column; gap: 5px; }
   label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; }
@@ -343,17 +382,27 @@
 
 <main>
 
+  <!-- Pipeline toggle -->
+  <div class="pipeline-toggle">
+    <button class="pipeline-btn" data-pipeline="clone" onclick="setPipeline('clone')">
+      Clone + GEO <span class="pipeline-tag">REC</span>
+    </button>
+    <button class="pipeline-btn" data-pipeline="template" onclick="setPipeline('template')">
+      Template
+    </button>
+  </div>
+
   <!-- Inputs -->
-  <div class="inputs">
+  <div class="inputs" id="inputs-bar">
     <div class="field">
       <label for="inp-url">Target URL</label>
-      <input id="inp-url" type="url" placeholder="https://virumakupunktur.dk" value="https://virumakupunktur.dk" />
+      <input id="inp-url" type="url" placeholder="https://example.com" value="https://virumakupunktur.dk" />
     </div>
     <div class="field">
       <label for="inp-client">Client Name</label>
-      <input id="inp-client" type="text" placeholder="virum-akupunktur" value="virum-akupunktur" />
+      <input id="inp-client" type="text" placeholder="my-client" value="virum-akupunktur" />
     </div>
-    <div class="field">
+    <div class="field template-only">
       <label for="inp-scheme">Color Scheme</label>
       <select id="inp-scheme">
         <option value="scheme-a">Scheme A — Original</option>
@@ -361,7 +410,7 @@
         <option value="scheme-c">Scheme C — Cool</option>
       </select>
     </div>
-    <div class="field">
+    <div class="field template-only">
       <label for="inp-scrape-mode">Scrape Mode</label>
       <select id="inp-scrape-mode">
         <option value="auto">Auto (Firecrawl)</option>
@@ -370,58 +419,8 @@
     </div>
   </div>
 
-  <!-- Steps + Run All -->
-  <div class="steps-bar">
-    <button class="step-btn" data-step="1" onclick="handleStep(1)">
-      <div class="step-top">
-        <span class="step-num">STEP 01</span>
-        <span class="step-indicator"></span>
-      </div>
-      <div class="step-name">Check</div>
-      <div class="step-status" id="status-1">idle</div>
-    </button>
-
-    <button class="step-btn" data-step="2" onclick="handleStep(2)">
-      <div class="step-top">
-        <span class="step-num">STEP 02</span>
-        <span class="step-indicator"></span>
-      </div>
-      <div class="step-name">Scrape</div>
-      <div class="step-status" id="status-2">idle</div>
-    </button>
-
-    <button class="step-btn" data-step="3" onclick="handleStep(3)">
-      <div class="step-top">
-        <span class="step-num">STEP 03</span>
-        <span class="step-indicator"></span>
-      </div>
-      <div class="step-name">Structure</div>
-      <div class="step-status" id="status-3">idle</div>
-    </button>
-
-    <button class="step-btn" data-step="4" onclick="handleStep(4)">
-      <div class="step-top">
-        <span class="step-num">STEP 04</span>
-        <span class="step-indicator"></span>
-      </div>
-      <div class="step-name">Generate</div>
-      <div class="step-status" id="status-4">idle</div>
-    </button>
-
-    <button class="step-btn" data-step="5" onclick="handleStep(5)">
-      <div class="step-top">
-        <span class="step-num">STEP 05</span>
-        <span class="step-indicator"></span>
-      </div>
-      <div class="step-name">QA</div>
-      <div class="step-status" id="status-5">idle</div>
-    </button>
-
-    <button class="run-all-btn" id="run-all-btn" onclick="handleRunAll()">
-      <span class="run-all-icon">⚡</span>
-      <span class="run-all-label">RUN ALL</span>
-    </button>
-  </div>
+  <!-- Steps + Run All (rendered dynamically) -->
+  <div class="steps-bar" id="steps-bar"></div>
 
   <!-- Terminal -->
   <div class="terminal-wrap">
@@ -443,19 +442,40 @@
 </footer>
 
 <script>
-  // ── State ─────────────────────────────────────────────────────────────────
-  let isRunning   = false;
-  let currentES   = null;   // active EventSource
+  // ── Pipeline definitions ─────────────────────────────────────────────────
+  const PIPELINES = {
+    clone:    { steps: [
+      { id: 1, label: 'Clone' },
+      { id: 2, label: 'Extract' },
+      { id: 3, label: 'Inject' },
+      { id: 4, label: 'QA' },
+    ]},
+    template: { steps: [
+      { id: 1, label: 'Check' },
+      { id: 2, label: 'Scrape' },
+      { id: 3, label: 'Structure' },
+      { id: 4, label: 'Generate' },
+      { id: 5, label: 'QA' },
+    ]},
+  };
 
-  // ── DOM helpers ──────────────────────────────────────────────────────────
+  // ── State ─────────────────────────────────────────────────────────────────
+  let pipeline    = 'clone';
+  let isRunning   = false;
+  let currentES   = null;
+
+  // ── DOM refs ──────────────────────────────────────────────────────────────
   const term        = document.getElementById('terminal');
   const statusBar   = document.getElementById('status-bar');
   const termTitle   = document.getElementById('terminal-title');
+  const stepsBar    = document.getElementById('steps-bar');
+  const inputsBar   = document.getElementById('inputs-bar');
 
   function getUrl()        { return document.getElementById('inp-url').value.trim(); }
   function getClient()     { return document.getElementById('inp-client').value.trim(); }
   function getScheme()     { return document.getElementById('inp-scheme').value; }
   function getScrapeMode() { return document.getElementById('inp-scrape-mode').value; }
+  function getSteps()      { return PIPELINES[pipeline].steps; }
 
   function appendLog(html, cssClass = 't-stdout') {
     const span = document.createElement('span');
@@ -475,8 +495,42 @@
     termTitle.textContent = '— ready —';
   }
 
-  function setStatus(text) {
-    statusBar.textContent = text;
+  function setStatus(text) { statusBar.textContent = text; }
+
+  // ── Pipeline switching ───────────────────────────────────────────────────
+  function setPipeline(p) {
+    if (isRunning) return;
+    pipeline = p;
+    document.querySelectorAll('.pipeline-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.pipeline === p);
+    });
+    // Toggle template-only inputs
+    document.querySelectorAll('.template-only').forEach(el => {
+      el.style.display = p === 'template' ? '' : 'none';
+    });
+    inputsBar.classList.toggle('clone-mode', p === 'clone');
+    renderSteps();
+  }
+
+  // ── Render step buttons ──────────────────────────────────────────────────
+  function renderSteps() {
+    const steps = getSteps();
+    let html = '';
+    steps.forEach((s, i) => {
+      html += `<button class="step-btn" data-step="${s.id}" onclick="handleStep(${s.id})">
+        <div class="step-top">
+          <span class="step-num">STEP 0${i + 1}</span>
+          <span class="step-indicator"></span>
+        </div>
+        <div class="step-name">${s.label}</div>
+        <div class="step-status" id="status-${s.id}">idle</div>
+      </button>`;
+    });
+    html += `<button class="run-all-btn" id="run-all-btn" onclick="handleRunAll()">
+      <span class="run-all-icon">⚡</span>
+      <span class="run-all-label">RUN ALL</span>
+    </button>`;
+    stepsBar.innerHTML = html;
   }
 
   // ── Step button states ───────────────────────────────────────────────────
@@ -484,93 +538,71 @@
     const btn = document.querySelector(`[data-step="${stepId}"]`);
     const statusEl = document.getElementById(`status-${stepId}`);
     if (!btn || !statusEl) return;
-
     btn.className = `step-btn ${state}`;
-    const stateText = {
-      idle:    'idle',
-      running: 'running…',
-      done:    detail || 'done',
-      error:   detail || 'error',
-    }[state] ?? state;
-    statusEl.textContent = stateText;
+    statusEl.textContent = ({ idle:'idle', running:'running…', done: detail||'done', error: detail||'error' })[state] ?? state;
   }
 
   function resetAllSteps() {
-    [1,2,3,4,5].forEach(i => setStepState(i, 'idle'));
+    getSteps().forEach(s => setStepState(s.id, 'idle'));
   }
 
-  // ── Lock/unlock all controls ─────────────────────────────────────────────
+  // ── Lock/unlock ──────────────────────────────────────────────────────────
   function lockUI() {
     isRunning = true;
-    document.querySelectorAll('.step-btn, .run-all-btn').forEach(b => b.disabled = true);
+    document.querySelectorAll('.step-btn, .run-all-btn, .pipeline-btn').forEach(b => b.disabled = true);
   }
-
   function unlockUI() {
     isRunning = false;
-    document.querySelectorAll('.step-btn, .run-all-btn').forEach(b => b.disabled = false);
+    document.querySelectorAll('.step-btn, .run-all-btn, .pipeline-btn').forEach(b => b.disabled = false);
   }
 
-  // ── Run a single step (returns Promise<exitCode>) ─────────────────────────
+  // ── Run a single step ────────────────────────────────────────────────────
   function runStep(stepId) {
     return new Promise((resolve, reject) => {
       const url    = getUrl();
       const client = getClient();
-      const scheme = getScheme();
-
       if (!url || !client) {
         appendRaw(`<span class="t-error">⚠ Please fill in URL and Client Name.\n</span>`);
-        reject(new Error('Missing inputs'));
-        return;
+        reject(new Error('Missing inputs')); return;
       }
 
-      const LABELS = { 1:'Check', 2:'Scrape', 3:'Structure', 4:'Generate', 5:'QA' };
+      const step = getSteps().find(s => s.id === stepId);
+      if (!step) { reject(new Error('Unknown step')); return; }
 
-      // Divider
       appendRaw(`<span class="t-divider">${'─'.repeat(60)}\n</span>`);
-      appendRaw(`<span class="t-header">▶  Step ${stepId}: ${LABELS[stepId]}\n</span>`);
+      appendRaw(`<span class="t-header">▶  Step ${stepId}: ${step.label}\n</span>`);
 
       setStepState(stepId, 'running');
-      termTitle.textContent = `Step ${stepId}: ${LABELS[stepId]} — running…`;
-      setStatus(`Running Step ${stepId}: ${LABELS[stepId]}…`);
+      termTitle.textContent = `Step ${stepId}: ${step.label} — running…`;
+      setStatus(`Running Step ${stepId}: ${step.label}…`);
 
-      const params = new URLSearchParams({ step: stepId, url, client, scheme, scrapeMode: getScrapeMode() });
+      const params = new URLSearchParams({
+        pipeline, step: stepId, url, client,
+        scheme: getScheme(), scrapeMode: getScrapeMode(),
+      });
       const es = new EventSource(`/run?${params}`);
       currentES = es;
 
-      let startTime = Date.now();
-
       es.onmessage = (e) => {
         const msg = JSON.parse(e.data);
-
         if (msg.type === 'start') {
           appendRaw(`<span class="t-cmd">$ ${msg.cmd}\n\n</span>`);
-          startTime = Date.now();
-        }
-
-        else if (msg.type === 'log') {
+        } else if (msg.type === 'log') {
           appendLog(msg.text, msg.stream === 'stderr' ? 't-stderr' : 't-stdout');
-        }
-
-        else if (msg.type === 'done') {
+        } else if (msg.type === 'done') {
           const secs = (msg.duration / 1000).toFixed(1);
           appendRaw(`\n<span class="t-done">✅  Done in ${secs}s\n</span>`);
           setStepState(stepId, 'done', `✓ ${secs}s`);
-          termTitle.textContent = `Step ${stepId}: ${LABELS[stepId]} — done (${secs}s)`;
+          termTitle.textContent = `Step ${stepId}: ${step.label} — done (${secs}s)`;
           setStatus(`Step ${stepId} completed in ${secs}s`);
-          es.close();
-          currentES = null;
-          resolve(0);
-        }
-
-        else if (msg.type === 'error') {
+          es.close(); currentES = null; resolve(0);
+        } else if (msg.type === 'error') {
           const secs = (msg.duration / 1000).toFixed(1);
           appendRaw(`\n<span class="t-error">❌  Failed (exit ${msg.exitCode}) after ${secs}s\n</span>`);
           setStepState(stepId, 'error', `✗ exit ${msg.exitCode}`);
-          termTitle.textContent = `Step ${stepId}: ${LABELS[stepId]} — failed`;
+          termTitle.textContent = `Step ${stepId}: ${step.label} — failed`;
           setStatus(`Step ${stepId} failed`);
-          es.close();
-          currentES = null;
-          reject(new Error(`Exit ${msg.exitCode}`));
+          es.close(); currentES = null; reject(new Error(`Exit ${msg.exitCode}`));
         }
       };
 
@@ -578,9 +610,7 @@
         appendRaw(`<span class="t-error">Connection lost.\n</span>`);
         setStepState(stepId, 'error', '✗ connection error');
         termTitle.textContent = `Step ${stepId} — connection error`;
-        es.close();
-        currentES = null;
-        reject(new Error('SSE connection error'));
+        es.close(); currentES = null; reject(new Error('SSE connection error'));
       };
     });
   }
@@ -589,9 +619,7 @@
   async function handleStep(stepId) {
     if (isRunning) return;
     lockUI();
-    try {
-      await runStep(stepId);
-    } catch { /* status already updated */ }
+    try { await runStep(stepId); } catch { /* status already updated */ }
     unlockUI();
   }
 
@@ -602,23 +630,25 @@
     clearLog();
     lockUI();
 
-    appendRaw(`<span class="t-header">⚡  Run All — starting pipeline\n</span>`);
-    appendRaw(`<span class="t-muted">URL: ${getUrl()}\nClient: ${getClient()}\nScheme: ${getScheme()}\nScrape: ${getScrapeMode()}\n\n</span>`);
+    const pLabel = pipeline === 'clone' ? 'Clone + GEO' : 'Template';
+    appendRaw(`<span class="t-header">⚡  Run All — ${pLabel} pipeline\n</span>`);
+    appendRaw(`<span class="t-muted">URL: ${getUrl()}\nClient: ${getClient()}\n</span>`);
+    if (pipeline === 'template') {
+      appendRaw(`<span class="t-muted">Scheme: ${getScheme()}\nScrape: ${getScrapeMode()}\n</span>`);
+    }
+    appendRaw(`\n`);
 
-    const steps = [1, 2, 3, 4, 5];
+    const steps = getSteps();
     let stopped = false;
 
-    for (const stepId of steps) {
-      if (stopped) {
-        setStepState(stepId, 'idle');
-        continue;
-      }
+    for (const s of steps) {
+      if (stopped) { setStepState(s.id, 'idle'); continue; }
       try {
-        await runStep(stepId);
+        await runStep(s.id);
       } catch {
         stopped = true;
-        appendRaw(`\n<span class="t-error">Pipeline stopped at Step ${stepId}. Fix the error and rerun.\n</span>`);
-        setStatus(`Pipeline failed at Step ${stepId}`);
+        appendRaw(`\n<span class="t-error">Pipeline stopped at Step ${s.id}. Fix the error and rerun.\n</span>`);
+        setStatus(`Pipeline failed at Step ${s.id}`);
       }
     }
 
@@ -628,7 +658,6 @@
       setStatus('Pipeline complete ✅');
       termTitle.textContent = 'All steps done ✅';
     }
-
     unlockUI();
   }
 
@@ -637,17 +666,14 @@
     try {
       const res  = await fetch('/api/env');
       const data = await res.json();
-
       const fc = document.getElementById('pill-firecrawl');
       const an = document.getElementById('pill-anthropic');
-
       fc.className = `env-pill ${data.firecrawl ? 'ok' : 'miss'}`;
       an.className = `env-pill ${data.anthropic  ? 'ok' : 'miss'}`;
-
       if (!data.firecrawl || !data.anthropic) {
         appendRaw(`<span class="t-stderr">⚠  Some API keys are missing in .env.local\n`);
-        if (!data.firecrawl) appendRaw(`   • FIRECRAWL_API_KEY — scrape will use manual fetch fallback\n`);
-        if (!data.anthropic)  appendRaw(`   • ANTHROPIC_API_KEY — structure step will use --manual mode\n`);
+        if (!data.firecrawl) appendRaw(`   • FIRECRAWL_API_KEY — needed for template pipeline scrape\n`);
+        if (!data.anthropic)  appendRaw(`   • ANTHROPIC_API_KEY — needed for content extraction\n`);
         appendRaw(`</span>\n`);
       } else {
         appendRaw(`<span class="t-done">✅  API keys loaded — Firecrawl + Anthropic ready\n</span>\n`);
@@ -658,6 +684,7 @@
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
+  setPipeline('clone');
   appendRaw(`<span class="t-muted">GEO Reforge Dashboard · ready\nFill in the URL and Client Name, then click a step or Run All.\n\n</span>`);
   checkEnv();
 </script>

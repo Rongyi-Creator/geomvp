@@ -19,7 +19,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
     "cheerio": "^1.2.0",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "playwright": "^1.61.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",
