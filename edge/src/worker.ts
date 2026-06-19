@@ -1,5 +1,6 @@
 interface Env {
   ORIGIN_HOST: string;
+  GEO_ANALYTICS: AnalyticsEngineDataset;
 }
 
 // ── GEO Data (extracted by Pipeline B, shared with Pipeline C) ──
@@ -146,6 +147,48 @@ function normalizePath(pathname: string): string {
 function lookupPage(pathname: string): PageMeta | null {
   const norm = normalizePath(pathname);
   return PAGES_META[norm] ?? null;
+}
+
+// ── UA classification ──
+
+const AI_RETRIEVAL_BOTS: Record<string, string> = {
+  "OAI-SearchBot": "OAI-SearchBot",
+  "ChatGPT-User": "ChatGPT-User",
+  "PerplexityBot": "PerplexityBot",
+  "ClaudeBot": "ClaudeBot",
+  "YouBot": "YouBot",
+  "Applebot": "Applebot",
+};
+
+const SEO_CRAWLERS: Record<string, string> = {
+  "Googlebot": "Googlebot",
+  "Bingbot": "Bingbot",
+  "bingbot": "Bingbot",
+  "YandexBot": "YandexBot",
+  "Baiduspider": "Baiduspider",
+};
+
+const AI_TRAINING_BOTS: Record<string, string> = {
+  "GPTBot": "GPTBot",
+  "CCBot": "CCBot",
+  "Google-Extended": "Google-Extended",
+  "anthropic-ai": "anthropic-ai",
+  "Bytespider": "Bytespider",
+};
+
+type UACategory = "ai_retrieval" | "seo_crawler" | "ai_training" | "visitor";
+
+function classifyUA(ua: string): { category: UACategory; botName: string } {
+  for (const [token, name] of Object.entries(AI_RETRIEVAL_BOTS)) {
+    if (ua.includes(token)) return { category: "ai_retrieval", botName: name };
+  }
+  for (const [token, name] of Object.entries(SEO_CRAWLERS)) {
+    if (ua.includes(token)) return { category: "seo_crawler", botName: name };
+  }
+  for (const [token, name] of Object.entries(AI_TRAINING_BOTS)) {
+    if (ua.includes(token)) return { category: "ai_training", botName: name };
+  }
+  return { category: "visitor", botName: "none" };
 }
 
 // ── Schema builders ──
@@ -323,6 +366,14 @@ export default {
 
     const contentType = originResponse.headers.get("content-type") || "";
     if (!contentType.includes("text/html") || !originResponse.ok) {
+      const visitorUA = request.headers.get("user-agent") || "";
+      const { category, botName } = classifyUA(visitorUA);
+      const geoStatus = !originResponse.ok ? "skipped_non2xx" : "passthrough_nonhtml";
+      env.GEO_ANALYTICS.writeDataPoint({
+        blobs: [category, botName, url.pathname, geoStatus, "asset"],
+        doubles: [1],
+        indexes: [request.headers.get("cf-ray") ?? ""],
+      });
       return originResponse;
     }
 
@@ -354,6 +405,15 @@ export default {
         .on("title", new TitleRewriter(page.metaTitle))
         .on('meta[name="description"]', new MetaDescriptionRemover());
     }
+
+    const visitorUA = request.headers.get("user-agent") || "";
+    const { category, botName } = classifyUA(visitorUA);
+    const geoStatus = page ? "injected" : "passthrough";
+    env.GEO_ANALYTICS.writeDataPoint({
+      blobs: [category, botName, url.pathname, geoStatus, page?.pageType ?? "unknown"],
+      doubles: [1],
+      indexes: [request.headers.get("cf-ray") ?? ""],
+    });
 
     return rewriter.transform(originResponse);
   },

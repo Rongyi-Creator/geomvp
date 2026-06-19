@@ -584,3 +584,260 @@ Gemini 调研确认 llms.txt 已失效（0.1% AI bot 访问率）。替代方案
 Worker 中不需要额外代码。这是 Cloudflare 平台级功能，按域名开关即可。
 
 **但 llms.txt 仍可保留作为兼容层**（极低成本），因为部分小众工具仍在读取。
+
+---
+
+## 12. Result Deliver — 效果交付页面设计
+
+> 版本: 2026-06-19 | 状态: 方案已确定，Phase 1 开始实施
+
+### 12.0 设计目标
+
+为客户提供一个直观的、Server-Rendered 的效果仪表盘，展示 GEO Edge Proxy 的实际价值：
+- **谁在访问** — AI bot 流量的实时统计
+- **注入了什么** — GEO schema 注入覆盖率
+- **效果如何** — AI 搜索引擎中的品牌可见性变化
+- **对比基线** — 接入前 vs 接入后的关键指标
+
+### 12.1 数据源架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    GEO Dashboard Worker                      │
+│               (geo-dashboard.workers.dev)                    │
+│                                                              │
+│  GET /                    → 客户列表 / 登录                   │
+│  GET /report/:client      → Server-Rendered HTML 效果报告     │
+│  GET /api/stats/:client   → JSON（预留 future frontend）     │
+│                                                              │
+│  数据源:                                                      │
+│  ├── Cloudflare Analytics Engine SQL API (实时, 免费)          │
+│  ├── OtterlyAI CSV 导入 (手动, 每周更新)                       │
+│  └── Baseline Snapshot (JSON, 存储在 KV 或 R2)                │
+└─────────────────────────────────────────────────────────────┘
+         ↑ writes                         ↑ reads
+┌──────────────────────┐       ┌──────────────────────────────┐
+│  GEO Proxy Worker    │       │  OtterlyAI Lite ($29/mo)     │
+│  (geo-p0-virum)      │       │  15 search prompts           │
+│                      │       │  每日追踪 4 AI 引擎            │
+│  每个请求:            │       │  CSV 导出 → 手动上传           │
+│  AE.writeDataPoint() │       └──────────────────────────────┘
+│  记录 UA/bot/page    │
+│  /geo-injected       │       ┌──────────────────────────────┐
+└──────────────────────┘       │  Baseline Snapshot           │
+                               │  接入前状态 JSON              │
+                               │  Schema 覆盖: 0              │
+                               │  Meta Desc 覆盖: 0            │
+                               │  robots.txt: 无 AI 策略       │
+                               └──────────────────────────────┘
+```
+
+### 12.2 成本规划（渐进式）
+
+| 阶段 | 时间节点 | 功能 | 月成本 |
+|------|----------|------|--------|
+| Phase 1 | 现在 | Worker 加 Analytics Engine 写入 + UA 分类 | $0 |
+| Phase 2 | DNS 接入后 1 周 | Dashboard Worker v1（Bot 统计 + 注入统计） | $0 |
+| Phase 3 | 接入后 2 周 | OtterlyAI Lite 基线 + 首次 CSV 导入 Dashboard | $29 |
+| Phase 4 | 3+ 客户时 | 升级 OtterlyAI Standard，API 自动拉取 | $189 |
+
+**关键决策：** OtterlyAI Lite ($29/mo) 没有 API 访问权限，API 需要 Standard ($189/mo)。
+单客户阶段用 CSV 手动导入即可，每周一次工作量可接受。3+ 客户时升级 Standard 实现全自动。
+
+### 12.3 Analytics Engine 数据模型
+
+#### wrangler.toml 配置
+
+```toml
+[[analytics_engine_datasets]]
+binding = "GEO_ANALYTICS"
+dataset = "geo_traffic"
+```
+
+#### 数据点结构（每请求写入一次）
+
+```typescript
+env.GEO_ANALYTICS.writeDataPoint({
+  blobs: [
+    // blob1: UA 类别 — "ai_retrieval" | "seo_crawler" | "ai_training" | "visitor"
+    classifyUA(userAgent),
+    // blob2: Bot 名称 — "OAI-SearchBot" | "Googlebot" | "unknown" 等
+    identifyBot(userAgent),
+    // blob3: 请求路径 — "/our-team/rygsmerter/"
+    url.pathname,
+    // blob4: GEO 注入状态 — "injected" | "passthrough" | "skipped_404"
+    geoStatus,
+    // blob5: 页面类型 — "service" | "home" | "faq" | "contact" | "unknown"
+    pageType,
+  ],
+  doubles: [1],  // 计数
+  indexes: [request.headers.get("cf-ray") ?? ""],
+});
+```
+
+**写入特性:** 非阻塞，不影响请求延迟。
+
+#### UA 分类逻辑
+
+```
+AI 检索 Bot（GEO 目标，高价值）:
+  OAI-SearchBot     — OpenAI 搜索
+  ChatGPT-User      — ChatGPT 浏览模式
+  PerplexityBot     — Perplexity 搜索
+  ClaudeBot         — Claude 搜索
+  YouBot            — You.com 搜索
+  Applebot          — Apple Intelligence
+
+SEO 爬虫（传统 SEO，重要）:
+  Googlebot         — Google 搜索
+  Bingbot           — Bing 搜索
+  YandexBot         — Yandex 搜索
+  Baiduspider       — 百度搜索
+
+AI 训练爬虫（已被 robots.txt 阻止，但仍可能访问）:
+  GPTBot            — OpenAI 训练
+  CCBot             — Common Crawl
+  Google-Extended   — Google AI 训练
+  anthropic-ai      — Anthropic 训练
+
+普通访客:
+  其他所有 UA
+```
+
+#### Dashboard 查询示例
+
+```sql
+-- 过去 7 天 AI bot 访问量按天聚合
+SELECT
+  toDate(timestamp) AS day,
+  blob1 AS category,
+  SUM(_sample_interval) AS visits
+FROM geo_traffic
+WHERE timestamp >= NOW() - INTERVAL '7' DAY
+  AND blob1 IN ('ai_retrieval', 'seo_crawler')
+GROUP BY day, category
+ORDER BY day
+
+-- Top 10 AI bot 最常访问的页面
+SELECT
+  blob3 AS page,
+  blob2 AS bot,
+  SUM(_sample_interval) AS visits
+FROM geo_traffic
+WHERE blob1 = 'ai_retrieval'
+  AND timestamp >= NOW() - INTERVAL '30' DAY
+GROUP BY page, bot
+ORDER BY visits DESC
+LIMIT 10
+
+-- GEO 注入成功率
+SELECT
+  blob4 AS status,
+  SUM(_sample_interval) AS count
+FROM geo_traffic
+WHERE timestamp >= NOW() - INTERVAL '7' DAY
+GROUP BY status
+
+-- 各 AI 引擎访问量排名
+SELECT
+  blob2 AS bot_name,
+  SUM(_sample_interval) AS visits
+FROM geo_traffic
+WHERE blob1 = 'ai_retrieval'
+  AND timestamp >= NOW() - INTERVAL '30' DAY
+GROUP BY bot_name
+ORDER BY visits DESC
+```
+
+### 12.4 Dashboard 页面设计（4 区块）
+
+Dashboard 采用 Server-Rendered HTML + CSS + inline SVG，零客户端 JavaScript。
+
+#### 区块 1: Bot Traffic Overview（实时，Analytics Engine）
+
+展示内容:
+- 大数字卡片: 今日 / 本周 / 本月总请求数
+- 分类饼图 (inline SVG): AI Retrieval / SEO Crawlers / Training Bots / Normal Visitors
+- Bot 明细表: 每个 bot 的访问次数（OAI-SearchBot, PerplexityBot, Googlebot 等）
+- 日趋势: 按天聚合的访问量折线图 (inline SVG)
+
+**核心价值:** "本月 PerplexityBot 访问了你的 32 个服务页面共 847 次" — 这是续费的核心证据，只有 Edge Proxy 能提供。
+
+#### 区块 2: GEO Injection Stats（实时，Analytics Engine）
+
+展示内容:
+- 注入成功率: 注入页面数 / 总 HTML 请求数
+- Schema 类型分布: MedicalBusiness / MedicalTherapy / FAQPage
+- 热门 GEO 页面 Top 10（被 AI bot 访问且注入了 schema 的页面）
+- 404 跳过页面列表
+
+#### 区块 3: AI Search Visibility（周更，OtterlyAI 数据）
+
+展示内容:
+- Brand Visibility Index 趋势（从 CSV 导入）
+- AI 引擎覆盖: 哪些引擎提到了品牌（ChatGPT / Perplexity / Google AIO 等）
+- 被引用的 URL 列表
+- 竞品对比（如有追踪）
+
+**数据来源 (< 3 客户):** OtterlyAI Lite CSV 导出 → 手动上传到 R2/KV → Dashboard 读取
+**数据来源 (≥ 3 客户):** OtterlyAI Standard API → `https://data.otterly.ai/v1` → Dashboard 自动拉取
+
+OtterlyAI API 要点:
+- Base URL: `https://data.otterly.ai/v1`
+- 认证: Bearer token
+- Standard 计划: 2,000 API requests/mo ($189/mo)
+- 可拉取: Brand KPIs, Prompt coverage, Citation sources, Net Sentiment Score, 竞品对比
+
+#### 区块 4: Baseline Comparison（基线对比）
+
+展示内容:
+- 接入前 vs 接入后对照表
+- 关键指标变化:
+  - Schema 覆盖: 0 页 → 38 页
+  - Meta Description 覆盖: 0 页 → 38 页
+  - robots.txt AI bot 策略: 无 → 检索 bot 放行 / 训练 bot 阻止
+  - sitemap.xml: 无 → 38 URLs
+  - Canonical URL: 缺失 → 全覆盖
+- AI 搜索可见性评分变化（OtterlyAI 基线 vs 当前）
+
+### 12.5 Dashboard 技术实现
+
+```
+Dashboard Worker 架构:
+  geo-dashboard.blake-designing.workers.dev
+  ├── 认证: 简单 Bearer token（初期）→ Cloudflare Access（后期）
+  ├── 模板: Server-rendered HTML（Worker 内生成）
+  ├── 样式: Inline CSS（系统字体栈，深色主题）
+  ├── 图表: Inline SVG（饼图、折线图，零 JS）
+  ├── 数据:
+  │   ├── Analytics Engine SQL API → 实时 bot 统计
+  │   ├── KV/R2 → OtterlyAI CSV 数据 + Baseline JSON
+  │   └── (future) OtterlyAI API → 自动拉取
+  └── 缓存: 5 分钟 edge cache（减少 SQL API 调用）
+```
+
+### 12.6 差异化分析
+
+```
+┌──────────────────────────────────────────────────────┐
+│  我们独有 (Analytics Engine)     任何人可买 (OtterlyAI)  │
+│  ─────────────────────           ──────────────────── │
+│  "PerplexityBot 访问了你的        "你的品牌在 Perplexity │
+│   32 个服务页 847 次"              搜索中可见度 72%"     │
+│                                                      │
+│  "OAI-SearchBot 最常访问          "ChatGPT 在回答关于   │
+│   /smertebehandling/"              akupunktur 的问题时  │
+│                                    引用了你 3 次"       │
+│                                                      │
+│  = 流量层面的证据                  = 结果层面的证据       │
+│  = 实时，精确到每次请求            = 每日采样            │
+│  = 只有 Edge Proxy 能提供          = 竞品也能买          │
+└──────────────────────────────────────────────────────┘
+
+两者结合 = 完整的 GEO 效果故事:
+  "AI bot 确实在大量访问你的网站 (Part A)"
+    +
+  "AI 搜索引擎确实在向用户推荐你 (Part B)"
+    +
+  "这一切在接入我们的服务之前都不存在 (Part C)"
+```

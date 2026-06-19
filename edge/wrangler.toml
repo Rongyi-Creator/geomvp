@@ -4,3 +4,7 @@ compatibility_date = "2024-12-01"
 
 [vars]
 ORIGIN_HOST = "https://virumakupunktur.dk"
+
+[[analytics_engine_datasets]]
+binding = "GEO_ANALYTICS"
+dataset = "geo_traffic"
