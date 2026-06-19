@@ -841,3 +841,49 @@ Dashboard Worker 架构:
     +
   "这一切在接入我们的服务之前都不存在 (Part C)"
 ```
+
+### 12.7 GEO 监控工具选型：OtterlyAI vs Airefs
+
+> 调研日期: 2026-06-19 | 结论: 选用 OtterlyAI
+
+#### 对比矩阵
+
+| 维度 | OtterlyAI ($29/mo Lite) | Airefs ($24/mo Lite) |
+|------|-------------------------|----------------------|
+| AI 引擎覆盖 | **7 个**: ChatGPT, Perplexity, Google AIO, AI Mode, Gemini, Copilot, Claude | **2 个**: ChatGPT, Google AIO（其他需申请） |
+| 追踪 Prompts | 15 (Lite) / 100 (Standard) / 400 (Premium) | 25 (Lite) / 60 (Pro) / 150 (Expert) |
+| GEO Audit | ✅ 25+ 页面因素分析 | ❌ |
+| 品牌情感分析 | ✅ 推荐/警告/否定分类 | ❌ |
+| Citation 追踪 | ✅ 域名+URL 级别 | ✅ 来源级别 |
+| Reddit 监控 | ❌ | ✅ |
+| API 访问 | Standard ($189/mo) 起 | Lite ($24/mo) 即有基础 API |
+| MCP Server | ✅ (Standard+) | ❌ |
+| Looker Studio | ✅ (Standard+) | ❌ |
+| CSV 导出 | ✅ 所有计划 | ✅ 所有计划 |
+| Done-for-you 服务 | ❌ | ✅ ($249/mo 起) |
+| 多国/多语言 | 50+ 国家 | 主要英语市场 |
+| 丹麦市场 | ✅ 明确支持 DK | ⚠️ 未明确列出 |
+| 行业验证 | Gartner Cool Vendor 2025, G2 4.9/5 (250+ reviews) | G2 4.9/5 (较少 reviews) |
+
+#### 决策：OtterlyAI
+
+**选择理由：**
+
+1. **AI 引擎覆盖（决定性）** — 7 vs 2。Edge Proxy 专门为 PerplexityBot、ClaudeBot 优化了 robots.txt 放行策略，监控工具必须能看到这些引擎的数据才能证明效果。Airefs 只覆盖 ChatGPT + Google AIO，盲区太大。
+
+2. **GEO Audit 与我们的服务直接对口** — OtterlyAI 的 GEO Audit 分析结构化数据、AI 可读性等 25+ 页面因素，正是 Edge Proxy 注入的内容。"Audit 前 vs Audit 后"可直接展示优化效果。
+
+3. **丹麦市场覆盖** — OtterlyAI 支持 50+ 国家含丹麦，Airefs 主要面向英语市场。virumakupunktur.dk 是丹麦语网站。
+
+4. **API/MCP 升级路径** — 扩展到 3+ 客户升级 Standard 时，OtterlyAI 有完整的 Public API (`data.otterly.ai/v1`) + MCP Server + Looker Studio connector。生态更成熟。
+
+5. **品牌情感分析** — 能区分 AI 是"热情推荐"还是"附带警告"，对客户报告有说服力。
+
+**Airefs 优势但不适用我们：**
+- Reddit 监控和 Done-for-you 服务适合内容营销公司，不适合我们的技术 SaaS 模型
+- Lite 即有 API 是优势，但 API 生态弱于 OtterlyAI
+
+**成本路径：**
+- 单客户: OtterlyAI Lite $29/mo (CSV 手动导入 Dashboard)
+- 3+ 客户: OtterlyAI Standard $189/mo (API 自动拉取)
+- 年付折扣: Lite $25/mo, Standard $160/mo
