@@ -125,8 +125,9 @@ const server = http.createServer((req, res) => {
   if (pathname === '/api/env') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
-      firecrawl:  !!process.env.FIRECRAWL_API_KEY,
-      anthropic:  !!process.env.ANTHROPIC_API_KEY,
+      firecrawl:   !!process.env.FIRECRAWL_API_KEY,
+      anthropic:   !!process.env.ANTHROPIC_API_KEY,
+      cloudflare:  !!process.env.CLOUDFLARE_API_TOKEN,
     }));
     return;
   }
