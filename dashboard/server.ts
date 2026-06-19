@@ -75,9 +75,38 @@ const CLONE_STEPS: StepDef[] = [
   },
 ];
 
+const EDGE_STEPS: StepDef[] = [
+  {
+    id: 1, label: 'Clone', dir: 'clone/',
+    script: '01-clone-site.ts',
+    getArgs: (url, client) => [url, client],
+  },
+  {
+    id: 2, label: 'Extract', dir: 'clone/',
+    script: '02-extract-geo.ts',
+    getArgs: (_, client) => [client],
+  },
+  {
+    id: 3, label: 'Gen Worker', dir: 'edge/',
+    script: '03-generate-worker.ts',
+    getArgs: (_, client) => [client],
+  },
+  {
+    id: 4, label: 'Deploy', dir: 'edge/',
+    script: '04-deploy-worker.ts',
+    getArgs: (_, client) => [client],
+  },
+  {
+    id: 5, label: 'Verify', dir: 'edge/',
+    script: '05-verify-worker.ts',
+    getArgs: (url, client) => [url, client],
+  },
+];
+
 const PIPELINES: Record<string, StepDef[]> = {
   template: TEMPLATE_STEPS,
   clone: CLONE_STEPS,
+  edge: EDGE_STEPS,
 };
 
 const server = http.createServer((req, res) => {
