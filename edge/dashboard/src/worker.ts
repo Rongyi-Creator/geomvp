@@ -19,9 +19,20 @@ interface AEQueryResult {
 
 interface OtterlyData {
   updatedAt: string;
-  brandVisibility: { date: string; score: number }[];
-  engines: { name: string; mentioned: boolean; citations: number }[];
-  citedUrls: { url: string; engine: string; prompt: string }[];
+  prompts: {
+    total: number;
+    brandMentioned: number;
+    domainCited: number;
+    items: { prompt: string; brandRank: string; domainCited: string; totalCitations: number }[];
+    competitors: { name: string; mentioned: number; cited: number }[];
+  };
+  citations: {
+    total: number;
+    myDomainCitations: number;
+    engines: { name: string; citations: number; myDomainCited: number }[];
+    myUrls: { url: string; engine: string; prompt: string; position: number; date: string }[];
+    topDomains: { domain: string; citations: number }[];
+  };
 }
 
 interface BaselineData {
@@ -425,68 +436,116 @@ async function renderBlock2(env: Env, days: number): Promise<string> {
 
 // ── Block 3: AI Search Visibility (OtterlyAI) ──
 
-async function renderBlock3(env: Env): Promise<string> {
-  const raw = await env.DASHBOARD_KV.get("otterly:virum", "text");
+async function renderBlock3(env: Env, client: string): Promise<string> {
+  const [promptsRaw, citationsRaw] = await Promise.all([
+    env.DASHBOARD_KV.get(`otterly_prompts:${client}`, "text"),
+    env.DASHBOARD_KV.get(`otterly_citations:${client}`, "text"),
+  ]);
 
-  if (!raw) {
+  if (!promptsRaw && !citationsRaw) {
     return `<div class="section">
 <h2>3. AI Search Visibility</h2>
 <div class="card">
   <div class="empty">
     <p style="font-size:16px;margin-bottom:8px">OtterlyAI data not yet imported</p>
-    <p style="font-size:13px;color:#64748b">Upload CSV via POST /api/otterly/:client with Bearer token</p>
+    <p style="font-size:13px;color:#64748b">POST /api/otterly/:client/prompts — upload prompts CSV</p>
+    <p style="font-size:13px;color:#64748b">POST /api/otterly/:client/citations?domain=example.com — upload citations CSV</p>
   </div>
 </div>
 </div>`;
   }
 
-  let data: OtterlyData;
-  try {
-    data = JSON.parse(raw) as OtterlyData;
-  } catch {
-    return `<div class="section"><h2>3. AI Search Visibility</h2><div class="card"><div class="empty">Invalid OtterlyAI data format</div></div></div>`;
+  type PromptsStored = OtterlyData["prompts"] & { updatedAt?: string };
+  type CitationsStored = OtterlyData["citations"] & { updatedAt?: string };
+
+  let prompts: PromptsStored | null = null;
+  let citations: CitationsStored | null = null;
+  if (promptsRaw) try { prompts = JSON.parse(promptsRaw); } catch { /* invalid */ }
+  if (citationsRaw) try { citations = JSON.parse(citationsRaw); } catch { /* invalid */ }
+
+  const updatedAt = prompts?.updatedAt || citations?.updatedAt || "";
+
+  // ── Stat cards ──
+  let statsHtml = `<div class="grid grid-4" style="margin-bottom:20px">`;
+  if (prompts) {
+    statsHtml += renderStatCard(`${prompts.brandMentioned}/${prompts.total}`, "Brand Mentioned", "Prompts mentioning brand");
+    statsHtml += renderStatCard(`${prompts.domainCited}/${prompts.total}`, "Domain Cited", "Prompts citing domain");
+  }
+  if (citations) {
+    statsHtml += renderStatCard(fmt(citations.total), "Total Citations", "All AI citations tracked");
+    const share = citations.total > 0 ? ((citations.myDomainCitations / citations.total) * 100).toFixed(1) : "0";
+    statsHtml += renderStatCard(fmt(citations.myDomainCitations), "My Citations", `${share}% share`);
+  }
+  statsHtml += `</div>`;
+
+  // ── Competitors table ──
+  let competitorsHtml = `<div class="empty">No prompts data</div>`;
+  if (prompts && prompts.competitors.length > 0) {
+    competitorsHtml = `<table>
+<thead><tr><th>#</th><th>Competitor</th><th>Mentioned</th><th>Cited</th></tr></thead>
+<tbody>${prompts.competitors.map((c, i) => `<tr><td>${i + 1}</td><td>${escHtml(c.name)}</td><td>${c.mentioned}</td><td>${c.cited}</td></tr>`).join("")}</tbody></table>`;
   }
 
-  // Brand Visibility trend
-  const bvPoints = data.brandVisibility.map((d, i) => ({ x: i, y: d.score }));
-  const bvLabels = data.brandVisibility.map((d) => d.date.slice(5));
-  const latestScore = data.brandVisibility.length > 0 ? data.brandVisibility[data.brandVisibility.length - 1].score : 0;
+  // ── AI Engine coverage ──
+  let enginesHtml = `<div class="empty">No citations data</div>`;
+  if (citations && citations.engines.length > 0) {
+    enginesHtml = citations.engines
+      .map((e) => {
+        return `<div class="status-row">
+          <span style="text-transform:capitalize">${escHtml(e.name)}</span>
+          <span style="display:flex;align-items:center;gap:8px">
+            <span style="min-width:50px;text-align:right">${e.citations}</span>
+            <span>${e.myDomainCited > 0 ? `<span class="badge badge-green">${e.myDomainCited} mine</span>` : `<span class="badge badge-gray">0 mine</span>`}</span>
+          </span>
+        </div>`;
+      })
+      .join("");
+  }
 
-  // Engines
-  const enginesHtml = data.engines
-    .map(
-      (e) =>
-        `<div class="status-row">
-          <span>${escHtml(e.name)}</span>
-          <span>${e.mentioned ? `<span class="badge badge-green">Cited (${e.citations})</span>` : `<span class="badge badge-gray">Not cited</span>`}</span>
-        </div>`
-    )
-    .join("");
+  // ── My domain citations table ──
+  let myUrlsHtml = `<div class="empty">No domain citations found</div>`;
+  if (citations && citations.myUrls.length > 0) {
+    myUrlsHtml = `<table>
+<thead><tr><th>URL</th><th>Engine</th><th>Pos</th><th>Prompt</th><th>Date</th></tr></thead>
+<tbody>${citations.myUrls
+      .map(
+        (u) =>
+          `<tr><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(u.url)}</td><td style="text-transform:capitalize">${escHtml(u.engine)}</td><td>#${u.position}</td><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(u.prompt)}</td><td>${escHtml(u.date)}</td></tr>`
+      )
+      .join("")}</tbody></table>`;
+  }
 
-  // Cited URLs
-  const citedTable = data.citedUrls.length > 0
-    ? `<table>
-<thead><tr><th>URL</th><th>Engine</th><th>Prompt</th></tr></thead>
-<tbody>${data.citedUrls
-        .slice(0, 10)
-        .map(
-          (c) =>
-            `<tr><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${escHtml(c.url)}</td><td>${escHtml(c.engine)}</td><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis">${escHtml(c.prompt)}</td></tr>`
-        )
-        .join("")}</tbody></table>`
-    : `<div class="empty">No citations recorded</div>`;
+  // ── Top cited domains bar chart ──
+  let topDomainsHtml = "";
+  if (citations && citations.topDomains.length > 0) {
+    const maxCit = citations.topDomains[0].citations;
+    topDomainsHtml = `<div class="card" style="margin-top:20px">
+  <h3>Top Cited Domains</h3>
+  ${citations.topDomains
+    .slice(0, 10)
+    .map((d) => {
+      const pct = maxCit > 0 ? (d.citations / maxCit) * 100 : 0;
+      const isMine = d.domain.includes("virumakupunktur");
+      return `<div class="status-row">
+        <span${isMine ? ` style="color:#10b981;font-weight:600"` : ""}>${escHtml(d.domain)}</span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <span style="width:120px"><div class="bar"><div class="bar-fill" style="width:${pct}%;background:${isMine ? "#10b981" : "#3b82f6"}"></div></div></span>
+          <span style="min-width:40px;text-align:right">${d.citations}</span>
+        </span>
+      </div>`;
+    })
+    .join("")}
+</div>`;
+  }
 
   return `<div class="section">
 <h2>3. AI Search Visibility <span class="badge badge-amber" style="font-size:11px;vertical-align:middle">OtterlyAI</span></h2>
-<div class="timestamp" style="margin-bottom:16px">Last updated: ${escHtml(data.updatedAt)}</div>
-<div class="grid grid-2" style="margin-bottom:20px">
-  ${renderStatCard(String(latestScore), "Brand Visibility Index", "OtterlyAI composite score")}
-  ${renderStatCard(String(data.engines.filter((e) => e.mentioned).length) + "/" + String(data.engines.length), "AI Engines Citing", "Engines mentioning brand")}
-</div>
+<div class="timestamp" style="margin-bottom:16px">Last updated: ${escHtml(updatedAt)}</div>
+${statsHtml}
 <div class="grid grid-2">
   <div class="card">
-    <h3>Visibility Trend</h3>
-    ${bvPoints.length > 1 ? svgLineChart([{ label: "Brand Visibility", color: "#10b981", points: bvPoints }], bvLabels) : `<div class="empty">Need 2+ data points for trend</div>`}
+    <h3>Competitor Ranking</h3>
+    ${competitorsHtml}
   </div>
   <div class="card">
     <h3>AI Engine Coverage</h3>
@@ -494,9 +553,10 @@ async function renderBlock3(env: Env): Promise<string> {
   </div>
 </div>
 <div class="card" style="margin-top:20px">
-  <h3>Cited URLs</h3>
-  ${citedTable}
+  <h3>My Domain Citations</h3>
+  ${myUrlsHtml}
 </div>
+${topDomainsHtml}
 </div>`;
 }
 
@@ -653,75 +713,150 @@ ${renderStyles()}
 </div></body></html>`;
 }
 
-// ── OtterlyAI CSV Upload Handler ──
+// ── OtterlyAI CSV Parsers ──
 
-async function handleOtterlyUpload(request: Request, env: Env, client: string): Promise<Response> {
-  const body = await request.text();
-  if (!body.trim()) {
-    return new Response(JSON.stringify({ error: "Empty body" }), { status: 400 });
-  }
-
-  // Store raw CSV and parsed JSON
-  await env.DASHBOARD_KV.put(`otterly_csv:${client}`, body);
-
-  const parsed = parseOtterlyCsv(body);
-  await env.DASHBOARD_KV.put(`otterly:${client}`, JSON.stringify(parsed));
-
-  return new Response(JSON.stringify({ ok: true, updatedAt: parsed.updatedAt, rows: body.split("\n").length }), {
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function parseOtterlyCsv(csv: string): OtterlyData {
+function parsePromptsCsv(csv: string): OtterlyData["prompts"] {
   const lines = csv.trim().split("\n");
-  const headers = lines[0]?.split(",").map((h) => h.trim().toLowerCase()) ?? [];
+  const headers = csvSplitRow(lines[0]);
 
-  const data: OtterlyData = {
-    updatedAt: new Date().toISOString().slice(0, 10),
-    brandVisibility: [],
-    engines: [],
-    citedUrls: [],
-  };
+  const promptIdx = headers.indexOf("Prompt");
+  const totalCitIdx = headers.indexOf("Total citations");
+  const brandMentIdx = headers.indexOf("Your brand mentioned");
+  const brandRankIdx = headers.indexOf("All Engines your brand rank");
+  const domainCitIdx = headers.indexOf("Your domain cited");
 
-  const engineSet = new Map<string, { mentioned: boolean; citations: number }>();
+  // Detect competitor columns: pairs of "[Name] mentioned" / "[Name] cited"
+  const competitorCols: { name: string; mentionedIdx: number; citedIdx: number }[] = [];
+  for (let i = 0; i < headers.length; i++) {
+    const h = headers[i];
+    if (h.endsWith(" mentioned") && h !== "Your brand mentioned") {
+      const name = h.replace(" mentioned", "");
+      const citedIdx = headers.indexOf(`${name} cited`);
+      if (citedIdx >= 0) competitorCols.push({ name, mentionedIdx: i, citedIdx });
+    }
+  }
+  const competitorMap = new Map<string, { mentioned: number; cited: number }>();
+  for (const c of competitorCols) competitorMap.set(c.name, { mentioned: 0, cited: 0 });
+
+  const items: OtterlyData["prompts"]["items"] = [];
+  let brandMentioned = 0;
+  let domainCited = 0;
 
   for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
     const cols = csvSplitRow(lines[i]);
-    const row: Record<string, string> = {};
-    for (let j = 0; j < headers.length; j++) {
-      row[headers[j]] = cols[j] ?? "";
-    }
 
-    // Try to extract date + score for brand visibility
-    const date = row["date"] || row["report_date"] || row["created_at"] || "";
-    const score = parseFloat(row["visibility_score"] || row["brand_visibility"] || row["score"] || "");
-    if (date && !isNaN(score)) {
-      data.brandVisibility.push({ date, score });
-    }
+    const prompt = cols[promptIdx] || "";
+    const brandRankVal = cols[brandRankIdx] || "-";
+    const domainCitVal = cols[domainCitIdx] || "-";
+    const totalCit = parseInt(cols[totalCitIdx] || "0") || 0;
+    const brandMentVal = cols[brandMentIdx] || "-";
 
-    // Engine data
-    const engine = row["engine"] || row["ai_engine"] || row["source"] || "";
-    const mentioned = row["mentioned"] === "true" || row["cited"] === "true" || row["is_mentioned"] === "true";
-    const url = row["url"] || row["cited_url"] || row["source_url"] || "";
-    const prompt = row["prompt"] || row["query"] || row["search_query"] || "";
+    if (brandMentVal !== "-" && brandMentVal !== "0") brandMentioned++;
+    if (domainCitVal !== "-" && domainCitVal !== "0") domainCited++;
 
-    if (engine) {
-      const existing = engineSet.get(engine) || { mentioned: false, citations: 0 };
-      if (mentioned) existing.mentioned = true;
-      if (url) existing.citations++;
-      engineSet.set(engine, existing);
-    }
+    items.push({ prompt, brandRank: brandRankVal, domainCited: domainCitVal, totalCitations: totalCit });
 
-    if (url && engine) {
-      data.citedUrls.push({ url, engine, prompt });
+    for (const comp of competitorCols) {
+      const mVal = parseInt(cols[comp.mentionedIdx] || "0") || 0;
+      const cVal = parseInt(cols[comp.citedIdx] || "0") || 0;
+      const existing = competitorMap.get(comp.name)!;
+      existing.mentioned += mVal;
+      existing.cited += cVal;
     }
   }
 
-  for (const [name, info] of engineSet) {
-    data.engines.push({ name, ...info });
+  const competitors = [...competitorMap.entries()]
+    .map(([name, d]) => ({ name, ...d }))
+    .sort((a, b) => (b.mentioned + b.cited) - (a.mentioned + a.cited));
+
+  return { total: items.length, brandMentioned, domainCited, items, competitors };
+}
+
+function parseCitationsCsv(csv: string, myDomain: string): OtterlyData["citations"] {
+  const lines = csv.trim().split("\n");
+  const headers = csvSplitRow(lines[0]);
+
+  const promptIdx = headers.indexOf("Prompt");
+  const serviceIdx = headers.indexOf("Service");
+  const urlIdx = headers.indexOf("Url");
+  const posIdx = headers.indexOf("Position");
+  const dateIdx = headers.indexOf("Date");
+  const domainIdx = headers.indexOf("Domain");
+
+  const myDomainLower = myDomain.toLowerCase();
+  const engineMap = new Map<string, { citations: number; myDomainCited: number }>();
+  const domainMap = new Map<string, number>();
+  const myUrls: OtterlyData["citations"]["myUrls"] = [];
+  let total = 0;
+  let myDomainCitations = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const cols = csvSplitRow(lines[i]);
+    total++;
+
+    const engine = cols[serviceIdx] || "";
+    const domain = (cols[domainIdx] || "").toLowerCase();
+    const url = cols[urlIdx] || "";
+    const prompt = cols[promptIdx] || "";
+    const position = parseInt(cols[posIdx] || "0") || 0;
+    const date = cols[dateIdx] || "";
+
+    const eng = engineMap.get(engine) || { citations: 0, myDomainCited: 0 };
+    eng.citations++;
+    if (domain === myDomainLower) {
+      eng.myDomainCited++;
+      myDomainCitations++;
+      myUrls.push({ url, engine, prompt, position, date });
+    }
+    engineMap.set(engine, eng);
+
+    domainMap.set(domain, (domainMap.get(domain) || 0) + 1);
   }
 
-  return data;
+  const engines = [...engineMap.entries()]
+    .map(([name, d]) => ({ name, ...d }))
+    .sort((a, b) => b.citations - a.citations);
+
+  const topDomains = [...domainMap.entries()]
+    .map(([domain, citations]) => ({ domain, citations }))
+    .sort((a, b) => b.citations - a.citations)
+    .slice(0, 15);
+
+  return { total, myDomainCitations, engines, myUrls, topDomains };
+}
+
+// ── OtterlyAI Upload Handlers ──
+
+async function handleOtterlyPromptsUpload(request: Request, env: Env, client: string): Promise<Response> {
+  const body = await request.text();
+  if (!body.trim()) {
+    return new Response(JSON.stringify({ error: "Empty body" }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+  const parsed = parsePromptsCsv(body);
+  const stored = { updatedAt: new Date().toISOString().slice(0, 10), ...parsed };
+  await env.DASHBOARD_KV.put(`otterly_prompts:${client}`, JSON.stringify(stored));
+  return new Response(
+    JSON.stringify({ ok: true, prompts: parsed.total, brandMentioned: parsed.brandMentioned, competitors: parsed.competitors.length }),
+    { headers: { "Content-Type": "application/json" } }
+  );
+}
+
+async function handleOtterlyCitationsUpload(request: Request, env: Env, client: string): Promise<Response> {
+  const body = await request.text();
+  if (!body.trim()) {
+    return new Response(JSON.stringify({ error: "Empty body" }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+  const reqUrl = new URL(request.url);
+  const myDomain = reqUrl.searchParams.get("domain") || `${client}.dk`;
+  const parsed = parseCitationsCsv(body, myDomain);
+  const stored = { updatedAt: new Date().toISOString().slice(0, 10), ...parsed };
+  await env.DASHBOARD_KV.put(`otterly_citations:${client}`, JSON.stringify(stored));
+  return new Response(
+    JSON.stringify({ ok: true, totalCitations: parsed.total, myDomainCitations: parsed.myDomainCitations, engines: parsed.engines.length }),
+    { headers: { "Content-Type": "application/json" } }
+  );
 }
 
 function csvSplitRow(line: string): string[] {
@@ -780,11 +915,18 @@ export default {
       return new Response("ok");
     }
 
-    // API: Upload OtterlyAI CSV
-    if (path.startsWith("/api/otterly/") && request.method === "POST") {
+    // API: Upload OtterlyAI prompts CSV
+    if (path.match(/^\/api\/otterly\/[^/]+\/prompts$/) && request.method === "POST") {
       const client = path.split("/")[3];
       if (!client) return new Response("Missing client", { status: 400 });
-      return handleOtterlyUpload(request, env, client);
+      return handleOtterlyPromptsUpload(request, env, client);
+    }
+
+    // API: Upload OtterlyAI citations CSV
+    if (path.match(/^\/api\/otterly\/[^/]+\/citations$/) && request.method === "POST") {
+      const client = path.split("/")[3];
+      if (!client) return new Response("Missing client", { status: 400 });
+      return handleOtterlyCitationsUpload(request, env, client);
     }
 
     // API: Upload Baseline JSON
@@ -815,7 +957,7 @@ export default {
     const [block1, block2, block3, block4] = await Promise.all([
       renderBlock1(env, days),
       renderBlock2(env, days),
-      renderBlock3(env),
+      renderBlock3(env, client),
       renderBlock4(env),
     ]);
 
