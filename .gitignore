@@ -26,6 +26,9 @@ Thumbs.db
 # Lighthouse CI artifacts
 .lighthouseci/
 
+# Wrangler local state
+.wrangler/
+
 # Logs
 *.log
 npm-debug.log*
