@@ -200,49 +200,146 @@ Worker 需要知道当前路径对应什么页面类型，才能注入正确的 
 
 ---
 
-## 5. DNS 切换方案对比
+## 5. DNS 切换方案深度分析
 
-客户需要做的唯一操作是修改 DNS。两种方式：
-
-### 方式 A: Nameserver 委托（推荐）
+### 5.0 客户 DNS 现状（以 virumakupunktur.dk 为例）
 
 ```
-客户域名注册商面板:
-  nameserver 1: xxx.ns.cloudflare.com
-  nameserver 2: yyy.ns.cloudflare.com
-
-效果: 整个域名由 Cloudflare 管理
-优势: 完整控制，支持所有 Cloudflare 功能（WAF、Bot管理、Markdown for Agents）
-劣势: 客户需要信任我们管理他们的 DNS
+Nameserver:  ns01.one.com, ns02.one.com
+A record:    46.30.215.142
+AAAA record: 2a02:2350:5:106:73:5f57:501:b179
+www:         A 46.30.215.142（与裸域相同 IP）
+MX records:  mx1-4.pub.mailpod13-cph3.one.com（4 条，one.com 邮件托管）
+TXT records: 无
+子域名:      无 mail/webmail/ftp 子域名
 ```
 
-### 方式 B: CNAME 局部代理（Orange Cloud）
+**关键集成：** one.com 同时提供网站托管和邮件托管。DNS 切换必须保证邮件不中断。
+
+### 5.1 核心概念：Cloudflare 代理模式
+
+Cloudflare 的每条 DNS 记录有两种模式：
+- **🟠 橙色云（Proxied）**：流量经过 Cloudflare 边缘 → Worker 可处理 → 再到 origin
+- **⚪ 灰色云（DNS-only）**：Cloudflare 仅做 DNS 解析，流量直达 origin，不经过 Worker
+
+这意味着：**即使 nameserver 委托给 Cloudflare，也可以精确控制哪些流量经过代理、哪些直达 origin。**
+
+### 5.2 三种方式对比
+
+#### 方式 A: Nameserver 委托（⭐ 推荐）
 
 ```
-客户 DNS 面板:
+Step 1: 在 Cloudflare 添加域名 → 自动扫描并导入全部现有 DNS 记录
+Step 2: 验证导入的记录（尤其是 MX 邮件记录）
+Step 3: 客户在 one.com 面板修改 nameserver:
+          ns01.one.com → xxx.ns.cloudflare.com
+          ns02.one.com → yyy.ns.cloudflare.com
+Step 4: 初始状态：所有记录设为灰色云（DNS-only）
+         → 此时功能 100% 等同于修改前，零影响
+Step 5: 将 A/AAAA/www 记录切换为橙色云（Proxied）
+         → Worker 开始处理网站流量，GEO 生效
+         → MX 记录保持灰色云，邮件直达 one.com，不经过代理
+```
+
+| 影响项 | 影响程度 | 说明 |
+|--------|---------|------|
+| 网站访问 | **零影响** | origin 不变，Worker 透传所有内容 + 注入 GEO |
+| 邮件收发 | **零影响** | MX 记录设为 DNS-only，邮件直达 one.com 邮件服务器 |
+| 预约/表单 | **零影响** | Worker 透传所有非 HTML 请求（POST、API 调用） |
+| SSL 证书 | **零影响** | Cloudflare 自动签发边缘证书；origin 的 Let's Encrypt 仍用于回源 |
+| one.com 管理面板 | **无影响** | 网站编辑器、文件管理等依然可用 |
+
+**独特优势 — 零风险渐进式迁移 + 即时回滚：**
+
+```
+灰色云模式（Step 4）  →  橙色云模式（Step 5）  →  回滚灰色云
+      ↓                        ↓                        ↓
+  零功能变化              GEO 生效                GEO 关闭，秒级恢复
+  可充分测试              邮件不受影响             无需改 nameserver 回去
+```
+
+Step 4 → Step 5 的切换在 Cloudflare Dashboard 上是一个开关，**无需客户参与，即时生效，即时可回滚**。
+
+**劣势：** 客户需要修改 nameserver（心理门槛最高的操作），但实际风险最低。
+
+---
+
+#### 方式 B: CNAME 局部代理
+
+```
+客户在 one.com DNS 面板添加:
   www  CNAME  geo-proxy-virum.workers.dev
-
-效果: 仅 www 子域通过 Cloudflare
-优势: 客户保留 DNS 控制权，改动最小
-劣势: 裸域 (example.com) 不支持 CNAME（DNS 标准限制）
-      部分 Cloudflare 功能不可用
 ```
 
-### 方式 C: Cloudflare for SaaS（CNAME 代理，支持裸域）
+| 影响项 | 影响程度 | 说明 |
+|--------|---------|------|
+| www 子域 | GEO 生效 | 流量经过 Worker |
+| 裸域 (virumakupunktur.dk) | **无 GEO** | 裸域不支持 CNAME（DNS 标准限制），流量仍直达 one.com |
+| 邮件 | 零影响 | 未触碰 MX 记录 |
+
+**致命缺陷：** 大多数用户访问裸域（virumakupunktur.dk），不带 www。裸域没有 GEO = 大部分流量无效。对于 AI 爬虫也是如此——它们通常从裸域开始抓取。
+
+**结论：不推荐。GEO 覆盖不完整，产品价值打折。**
+
+---
+
+#### 方式 C: Cloudflare for SaaS
 
 ```
 我们的 Cloudflare 账户:
-  创建 Custom Hostname: virumakupunktur.com
-  
-客户 DNS 面板:
-  @    CNAME  geo-proxy.our-platform.com
-  www  CNAME  geo-proxy.our-platform.com
+  创建 Custom Hostname: virumakupunktur.dk
 
-效果: 裸域+www 都通过我们的 Cloudflare
-优势: 客户只需加 CNAME，不交出 nameserver
-劣势: 需要 Cloudflare for SaaS 付费计划（$2/月/custom hostname）
-      需要客户配合添加 DNS 验证记录
+客户在 one.com DNS 面板:
+  @    CNAME  geo-proxy.our-platform.com    ← ⚠️ one.com 可能不支持
+  www  CNAME  geo-proxy.our-platform.com
+  _cf-custom-hostname  TXT  <验证码>
 ```
+
+| 影响项 | 影响程度 | 说明 |
+|--------|---------|------|
+| 裸域 | **取决于 one.com 是否支持 root CNAME** | 标准 DNS 不允许裸域 CNAME |
+| 邮件 | 零影响 | 未触碰 MX |
+| 成本 | $2/月/hostname | Cloudflare for SaaS 费用 |
+
+**问题：** one.com 作为基础型托管商，大概率不支持 ALIAS/ANAME 记录（仅 Cloudflare、Route 53、DNSimple 等高级 DNS 支持）。裸域 CNAME 不可用 = 退化为方式 B。
+
+**结论：技术上不如方式 A 可靠，且有额外成本。仅在客户坚决拒绝修改 nameserver 时作为备选。**
+
+---
+
+### 5.3 推荐决策及理由
+
+**推荐方式 A（Nameserver 委托）**。理由：
+
+1. **对已有功能影响最小** — 初始灰色云模式 = 零功能变化，经过验证后再开启代理
+2. **裸域 + www 完整覆盖** — 方式 B/C 都有裸域问题
+3. **邮件安全隔离** — MX 记录永远不经过代理，直达 one.com 邮件服务器
+4. **即时回滚** — 橙色云 → 灰色云一键切换，秒级恢复，无需客户操作
+5. **零额外成本** — Cloudflare Free 计划即可（方式 C 需 $2/月/域名）
+6. **解锁全部 Cloudflare 功能** — WAF、Bot Management、Markdown for Agents
+
+**心理门槛应对：** "修改 nameserver" 听起来可怕，但实际操作只需客户在 one.com 面板改两行文字。向客户强调：
+- one.com 的网站、邮件、所有功能继续正常工作
+- 我们会先用灰色云模式验证一切正常，再开启 GEO
+- 随时可一键关闭 GEO 回到原状，无需客户操作
+- 如果完全退出服务，改回 one.com 的 nameserver 即可 100% 恢复原状
+
+### 5.4 SaaS 服务控制机制
+
+Worker 作为边缘代理层，支持多种粒度的服务控制：
+
+```
+层级 1 — Worker 路由关闭:    Cloudflare Dashboard 移除 Worker 路由
+                              效果: 流量直达 origin，GEO 完全关闭，网站正常
+层级 2 — Worker 内部开关:    代码中设置 passthrough 模式
+                              效果: Worker 仅透传，不注入任何 GEO 信号
+层级 3 — 灰色云回退:         A/AAAA 记录切回 DNS-only
+                              效果: 等同于未接入 Cloudflare，流量直达 origin
+层级 4 — 完全退出:           客户改回 one.com 的 nameserver
+                              效果: 100% 恢复到接入前状态
+```
+
+**SaaS 模型的技术基础：** 客户付费期间，Worker 提供 GEO 层；停止付费，关闭 Worker 路由即可。客户网站不受任何影响，仅失去 AI 搜索可见性增强。这是一个干净的、可逆的、按价值收费的 SaaS 模型。
 
 ---
 
