@@ -442,11 +442,11 @@ Worker 模板:
 
 在投入开发前，需要验证以下 3 个前提条件。任何一个不通过，方案需要调整：
 
-| # | 验证项 | 通过标准 | 验证方法 |
-|---|---|---|---|
-| **V1** | Worker 能从 origin 拿到完整 HTML | curl 返回的 HTML 包含页面主体文字内容（不是空壳等待 JS 渲染） | 从 Cloudflare Worker 发 fetch 到 `virumakupunktur.dk`，检查响应 body |
-| **V2** | HTMLRewriter 能可靠定位注入点 | 能匹配 `<head>`, `<title>`, `<meta>`, `<link rel=canonical>` | 写一个最小 Worker，对真实页面做注入，检查输出 |
-| **V3** | 客户愿意做 DNS 切换 | 至少一种 DNS 方式（nameserver / CNAME / CF for SaaS）客户可以接受 | 与客户沟通 |
+| # | 验证项 | 通过标准 | 验证方法 | 状态 |
+|---|---|---|---|---|
+| **V1** | Worker 能从 origin 拿到完整 HTML | curl 返回的 HTML 包含页面主体文字内容（不是空壳等待 JS 渲染） | 从 Cloudflare Worker 发 fetch 到 `virumakupunktur.dk`，检查响应 body | **已通过** (2026-06-19, 13 项 curl + P0 线上部署) |
+| **V2** | HTMLRewriter 能可靠定位注入点 | 能匹配 `<head>`, `<title>`, `<meta>`, `<link rel=canonical>` | 写一个最小 Worker，对真实页面做注入，检查输出 | **已通过** (2026-06-19, `geo-p0-virum.blake-designing.workers.dev` 线上验证) |
+| **V3** | 客户愿意做 DNS 切换 | 至少一种 DNS 方式（nameserver / CNAME / CF for SaaS）客户可以接受 | 与客户沟通 | **待验证** |
 
 ### 如果 V1 失败（origin 返回空壳 HTML）
 
