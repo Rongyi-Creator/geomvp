@@ -3,11 +3,14 @@ export const CANONICAL_HOST = 'https://virumakupunktur.dk';
 
 export const BUSINESS = {
   "@context": "https://schema.org",
-  "@type": "MedicalBusiness",
+  "@type": ["MedicalBusiness", "MedicalOrganization"],
   "name": "Virum Akupunktur",
   "legalName": "Jantek ApS",
   "description": "Virum Akupunktur tilbyder en unik holistisk service til kunder gennem evaluering og skabelse af passende behandlingsforløb baseret på Traditionel Kinesisk Medicin. Klinikken specialiserer sig i sikre, effektive og afslappende smertebehandlinger.",
   "url": "https://virumakupunktur.dk",
+  "telephone": "+45 25 72 42 65",
+  "priceRange": "Fra 450 kr",
+  "image": "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/namecardfront.jpg?etag=null&sourceContentType=image%2Fjpeg&quality=85",
   "address": {
     "@type": "PostalAddress",
     "streetAddress": "Dalstrøget 78, 4. sal",
@@ -20,7 +23,7 @@ export const BUSINESS = {
     "latitude": 55.7367,
     "longitude": 12.5186
   },
-  "medicalSpecialty": "Smertebehandling"
+  "medicalSpecialty": "PainManagement"
 };
 
 export const FAQ_ITEMS = [
