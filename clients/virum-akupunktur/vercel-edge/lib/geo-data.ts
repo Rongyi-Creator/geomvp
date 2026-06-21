@@ -23,7 +23,6 @@ export const BUSINESS = {
     "latitude": 55.7367,
     "longitude": 12.5186
   },
-  "medicalSpecialty": "PainManagement"
 };
 
 export const FAQ_ITEMS = [
