@@ -4,6 +4,7 @@ interface Env {
   CF_API_TOKEN: string;
   DASHBOARD_TOKEN: string;
   DASHBOARD_KV: KVNamespace;
+  GEO_TRAFFIC: AnalyticsEngineDataset;
 }
 
 // ── Types ──
@@ -892,6 +893,43 @@ async function handleBaselineUpload(request: Request, env: Env, client: string):
   }
 }
 
+// ── Traffic Event Ingest (called by Vercel Edge Proxy via waitUntil) ──
+
+async function handleTrafficEvent(request: Request, env: Env): Promise<Response> {
+  let body: Record<string, string>;
+  try {
+    body = await request.json() as Record<string, string>;
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const { category, botName, path: reqPath, geoStatus, pageType, client } = body;
+  if (!category || !geoStatus || !client) {
+    return new Response(JSON.stringify({ error: "Missing required fields: category, geoStatus, client" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  env.GEO_TRAFFIC.writeDataPoint({
+    blobs: [
+      category,
+      botName ?? "none",
+      reqPath ?? "/",
+      geoStatus,
+      pageType ?? "unknown",
+    ],
+    indexes: [client],
+  });
+
+  return new Response(JSON.stringify({ ok: true }), {
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 // ── Main Worker ──
 
 export default {
@@ -934,6 +972,11 @@ export default {
       const client = path.split("/")[3];
       if (!client) return new Response("Missing client", { status: 400 });
       return handleBaselineUpload(request, env, client);
+    }
+
+    // API: Receive traffic event from Vercel Edge Proxy
+    if (path.match(/^\/api\/traffic\/[^/]+$/) && request.method === "POST") {
+      return handleTrafficEvent(request, env);
     }
 
     // API: Stats JSON (for future frontend)

@@ -9,3 +9,7 @@ AE_DATASET = "geo_traffic"
 [[kv_namespaces]]
 binding = "DASHBOARD_KV"
 id = "76d59151b3934aa1b29306d6b6301293"
+
+[[analytics_engine_datasets]]
+binding = "GEO_TRAFFIC"
+dataset = "geo_traffic"

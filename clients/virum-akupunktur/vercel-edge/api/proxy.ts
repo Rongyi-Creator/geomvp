@@ -182,6 +182,34 @@ function transformHtml(
   return html;
 }
 
+// ── Analytics reporting (fire-and-forget via waitUntil) ──
+
+const DASHBOARD_URL = 'https://geo-dashboard.blake-designing.workers.dev';
+const DASHBOARD_CLIENT = 'virum';
+
+async function reportTraffic(
+  category: string,
+  botName: string,
+  path: string,
+  geoStatus: string,
+  pageType: string,
+): Promise<void> {
+  const token = process.env.DASHBOARD_TOKEN;
+  if (!token) return;
+  try {
+    await fetch(`${DASHBOARD_URL}/api/traffic/${DASHBOARD_CLIENT}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ category, botName, path, geoStatus, pageType, client: DASHBOARD_CLIENT }),
+    });
+  } catch {
+    // never let analytics affect the proxy response
+  }
+}
+
 // ── UA classification (for logging only — all visitors get identical content) ──
 
 const AI_RETRIEVAL_BOTS: Record<string, string> = {
@@ -226,7 +254,10 @@ function classifyUA(ua: string): { category: UACategory; botName: string } {
 
 // ── Main handler ──
 
-export default async function handler(request: Request): Promise<Response> {
+export default async function handler(
+  request: Request,
+  context: { waitUntil: (promise: Promise<unknown>) => void },
+): Promise<Response> {
   const url = new URL(request.url);
 
   // Static routes
@@ -254,6 +285,10 @@ export default async function handler(request: Request): Promise<Response> {
     console.log(
       `[GEO] ${geoStatus} | ${category}:${botName} | ${url.pathname}`,
     );
+    // Report errors but skip non-HTML assets (CSS/images are noise)
+    if (geoStatus === 'skipped_non2xx') {
+      context.waitUntil(reportTraffic(category, botName, url.pathname, geoStatus, 'unknown'));
+    }
     return originResponse;
   }
 
@@ -266,9 +301,11 @@ export default async function handler(request: Request): Promise<Response> {
   const visitorUA = request.headers.get('user-agent') || '';
   const { category, botName } = classifyUA(visitorUA);
   const geoStatus = page ? 'injected' : 'passthrough';
+  const pageType = page?.pageType ?? 'unknown';
   console.log(
-    `[GEO] ${geoStatus} | ${category}:${botName} | ${url.pathname} | ${page?.pageType ?? 'unknown'}`,
+    `[GEO] ${geoStatus} | ${category}:${botName} | ${url.pathname} | ${pageType}`,
   );
+  context.waitUntil(reportTraffic(category, botName, url.pathname, geoStatus, pageType));
 
   // Forward original response headers, override content-type and cache
   const responseHeaders = new Headers(originResponse.headers);
