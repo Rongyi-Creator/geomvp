@@ -1,10 +1,28 @@
 {
   "name": "Virum Akupunktur",
-  "schemaType": "MedicalBusiness",
+  "legalName": "Jantek ApS",
+  "schemaType": ["MedicalBusiness", "MedicalOrganization"],
   "description": "Virum Akupunktur tilbyder en unik holistisk service til kunder gennem evaluering og skabelse af passende behandlingsforløb baseret på Traditionel Kinesisk Medicin. Klinikken specialiserer sig i sikre, effektive og afslappende smertebehandlinger.",
   "phone": "+45 25 72 42 65",
+  "priceRange": "Fra 450 kr",
+  "image": "https://impro.usercontent.one/appid/oneComWsb/domain/virumakupunktur.dk/media/virumakupunktur.dk/onewebmedia/namecardfront.jpg?etag=null&sourceContentType=image%2Fjpeg&quality=85",
   "email": null,
   "website": "https://virumakupunktur.dk",
+  "openingHours": [
+    {
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+      "opens": "09:00",
+      "closes": "18:00"
+    },
+    {
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": ["Saturday", "Sunday"],
+      "opens": "09:00",
+      "closes": "18:00",
+      "description": "Efter telefonaftale"
+    }
+  ],
   "bookingUrl": "https://virumakupunktur.dk/booking",
   "facebookUrl": null,
   "trustpilotUrl": null,

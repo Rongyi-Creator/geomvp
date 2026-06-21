@@ -416,8 +416,11 @@
 
   <!-- Pipeline toggle -->
   <div class="pipeline-toggle">
+    <button class="pipeline-btn" data-pipeline="vercel-edge" onclick="setPipeline('vercel-edge')">
+      Vercel Edge <span class="pipeline-tag">REC</span>
+    </button>
     <button class="pipeline-btn" data-pipeline="edge" onclick="setPipeline('edge')">
-      Edge Proxy <span class="pipeline-tag">REC</span>
+      CF Edge
     </button>
     <button class="pipeline-btn" data-pipeline="clone" onclick="setPipeline('clone')">
       Clone + GEO
@@ -479,6 +482,13 @@
 <script>
   // ── Pipeline definitions ─────────────────────────────────────────────────
   const PIPELINES = {
+    'vercel-edge': { steps: [
+      { id: 1, label: 'Clone' },
+      { id: 2, label: 'Extract' },
+      { id: 3, label: 'Gen Vercel' },
+      { id: 4, label: 'Deploy' },
+      { id: 5, label: 'Verify' },
+    ]},
     edge: { steps: [
       { id: 1, label: 'Clone' },
       { id: 2, label: 'Extract' },
@@ -502,7 +512,7 @@
   };
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let pipeline     = 'edge';
+  let pipeline     = 'vercel-edge';
   let isRunning    = false;
   let currentES    = null;
   let selectedStep = null;     // which step's log is shown in terminal
@@ -590,7 +600,8 @@
     document.querySelectorAll('.template-only').forEach(el => {
       el.style.display = p === 'template' ? '' : 'none';
     });
-    inputsBar.className = `inputs${p === 'clone' ? ' clone-mode' : p === 'edge' ? ' edge-mode' : ''}`;
+    const edgeMode = p === 'edge' || p === 'vercel-edge';
+    inputsBar.className = `inputs${p === 'clone' ? ' clone-mode' : edgeMode ? ' edge-mode' : ''}`;
     renderSteps();
     showGlobalLog();
   }
@@ -758,7 +769,7 @@
     showGlobalLog();
     lockUI();
 
-    const pLabel = { edge: 'Edge Proxy', clone: 'Clone + GEO', template: 'Template' }[pipeline];
+    const pLabel = { 'vercel-edge': 'Vercel Edge', edge: 'CF Edge', clone: 'Clone + GEO', template: 'Template' }[pipeline];
     appendGlobal(`<span class="t-header">⚡  Run All — ${pLabel} pipeline\n</span>`);
     appendGlobal(`<span class="t-muted">URL: ${getUrl()}\nClient: ${getClient()}\n</span>`);
     if (pipeline === 'template') {
@@ -819,7 +830,7 @@
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
-  setPipeline('edge');
+  setPipeline('vercel-edge');
   appendGlobal(`<span class="t-muted">GEO Reforge Console · ready\nClick a step to view its log. Click ▶ or Run All to execute.\n\n</span>`);
   checkEnv();
 </script>

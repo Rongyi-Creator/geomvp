@@ -68,6 +68,10 @@ function queryTopGeoPages(dataset: string, days: number): string {
   return `SELECT blob3 AS page, blob5 AS page_type, blob2 AS bot, SUM(_sample_interval) AS visits FROM ${dataset} WHERE blob1 = 'ai_retrieval' AND blob4 = 'injected' AND timestamp >= NOW() - INTERVAL '${days}' DAY GROUP BY page, page_type, bot ORDER BY visits DESC LIMIT 10`;
 }
 
+function queryCoverageGaps(dataset: string, days: number): string {
+  return `SELECT blob3 AS page, SUM(_sample_interval) AS visits FROM ${dataset} WHERE blob4 = 'passthrough' AND blob1 IN ('ai_retrieval','seo_crawler') AND timestamp >= NOW() - INTERVAL '${days}' DAY GROUP BY page ORDER BY visits DESC LIMIT 15`;
+}
+
 function queryTotalRequests(dataset: string, days: number): string {
   return `SELECT SUM(_sample_interval) AS total FROM ${dataset} WHERE timestamp >= NOW() - INTERVAL '${days}' DAY`;
 }
@@ -648,6 +652,44 @@ async function renderBlock4(env: Env): Promise<string> {
 </div>`;
 }
 
+// ── Block 5: GEO Coverage Gaps ──
+
+async function renderBlock5(env: Env, days: number): Promise<string> {
+  const rows = await queryAE(env, queryCoverageGaps(env.AE_DATASET, days));
+
+  const gapTable = rows.length > 0
+    ? `<table>
+<thead><tr><th>Page</th><th>Bot Visits</th><th>Action</th></tr></thead>
+<tbody>${rows
+        .map((r) => {
+          const page = String(r.page);
+          const visits = Number(r.visits) || 0;
+          return `<tr>
+            <td style="font-family:monospace;font-size:13px">${escHtml(page)}</td>
+            <td>${fmt(visits)}</td>
+            <td><span class="badge badge-amber">Add GEO data</span></td>
+          </tr>`;
+        })
+        .join("")}</tbody></table>`
+    : `<div class="empty">No coverage gaps — all bot-visited pages have GEO data 🎉</div>`;
+
+  const totalGaps = rows.length;
+  const totalMissedVisits = rows.reduce((s, r) => s + (Number(r.visits) || 0), 0);
+
+  return `<div class="section">
+<h2>5. GEO Coverage Gaps <span class="badge badge-red" style="font-size:11px;vertical-align:middle">Action needed</span></h2>
+<div class="subtitle" style="margin-bottom:16px">Pages bots visit that receive no GEO schema — each row is a GEO improvement ticket</div>
+<div class="grid grid-2" style="margin-bottom:20px">
+  ${renderStatCard(String(totalGaps), "Uncovered Pages", "Bot-visited with no GEO data")}
+  ${renderStatCard(fmt(totalMissedVisits), "Missed Bot Visits", `Last ${days} days without schema`)}
+</div>
+<div class="card">
+  <h3>Top Pages to Add GEO Data (ranked by bot visits)</h3>
+  ${gapTable}
+</div>
+</div>`;
+}
+
 // ── Utilities ──
 
 function escHtml(s: string): string {
@@ -997,11 +1039,12 @@ export default {
     const client = "virum";
     const generatedAt = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
 
-    const [block1, block2, block3, block4] = await Promise.all([
+    const [block1, block2, block3, block4, block5] = await Promise.all([
       renderBlock1(env, days),
       renderBlock2(env, days),
       renderBlock3(env, client),
       renderBlock4(env),
+      renderBlock5(env, days),
     ]);
 
     const html = `<!DOCTYPE html>
@@ -1020,6 +1063,7 @@ ${block1}
 ${block2}
 ${block3}
 ${block4}
+${block5}
 <div style="text-align:center;padding:24px 0;color:#475569;font-size:12px">
   GEO Reforge Edge Proxy — Dashboard v1.0
 </div>

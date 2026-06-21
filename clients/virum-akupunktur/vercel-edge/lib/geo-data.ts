@@ -1,9 +1,12 @@
-export const ORIGIN_HOST = 'https://www.virumakupunktur.dk';
-export const CANONICAL_HOST = 'https://virumakupunktur.dk';
+export const ORIGIN_HOST = "https://www.virumakupunktur.dk";
+export const CANONICAL_HOST = "https://virumakupunktur.dk";
 
 export const BUSINESS = {
   "@context": "https://schema.org",
-  "@type": ["MedicalBusiness", "MedicalOrganization"],
+  "@type": [
+    "MedicalBusiness",
+    "MedicalOrganization"
+  ],
   "name": "Virum Akupunktur",
   "legalName": "Jantek ApS",
   "description": "Virum Akupunktur tilbyder en unik holistisk service til kunder gennem evaluering og skabelse af passende behandlingsforløb baseret på Traditionel Kinesisk Medicin. Klinikken specialiserer sig i sikre, effektive og afslappende smertebehandlinger.",
@@ -23,6 +26,30 @@ export const BUSINESS = {
     "latitude": 55.7367,
     "longitude": 12.5186
   },
+  "openingHoursSpecification": [
+    {
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday"
+      ],
+      "opens": "09:00",
+      "closes": "18:00"
+    },
+    {
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": [
+        "Saturday",
+        "Sunday"
+      ],
+      "opens": "09:00",
+      "closes": "18:00",
+      "description": "Efter telefonaftale"
+    }
+  ]
 };
 
 export const FAQ_ITEMS = [
@@ -83,13 +110,7 @@ export const SERVICES: Record<string, { name: string; description: string }> = {
   "/our-team/rynker-og-kosmetisk-akupunktur/": { name: "Rynker og kosmetisk akupunktur", description: "Kosmetisk akupunktur til behandling af rynker og hudpleje." },
 };
 
-interface PageMeta {
-  pageType: string;
-  metaTitle: string;
-  metaDescription: string;
-}
-
-export const PAGES_META: Record<string, PageMeta> = {
+export const PAGES_META: Record<string, { pageType: string; metaTitle: string; metaDescription: string }> = {
   "/": { pageType: "home", metaTitle: "Akupunktur i Dyssegård | Virum Akupunktur", metaDescription: "Virum Akupunktur tilbyder professionel akupunkturbehandling i Dyssegård. Smertebehandling, kosmetisk akupunktur, rygestop og meget mere. Book en tid i dag." },
   "/contact/": { pageType: "contact", metaTitle: "Kontakt Virum Akupunktur i Dyssegård | Virum Akupunktur", metaDescription: "Kontakt Virum Akupunktur i Dyssegård. Find adresse, telefon og åbningstider. Book din akupunkturbehandling nemt og hurtigt." },
   "/our-team/": { pageType: "service", metaTitle: "Akupunkturbehandlinger i Dyssegård | Virum Akupunktur", metaDescription: "Se alle akupunkturbehandlinger hos Virum Akupunktur i Dyssegård. Vi behandler smerter, hudlidelser, fordøjelsesproblemer, hormonelle ubalancer og meget mere." },

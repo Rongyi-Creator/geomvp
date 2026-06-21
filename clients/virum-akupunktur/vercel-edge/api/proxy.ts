@@ -119,20 +119,16 @@ ${urls}
   });
 }
 
-// ── HTML transformation (replaces Cloudflare HTMLRewriter) ──
+// ── HTML transformation ──
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function transformHtml(
-  html: string,
-  pathname: string,
-): string {
+function transformHtml(html: string, pathname: string): string {
   const norm = normalizePath(pathname);
   const page = PAGES_META[norm] ?? null;
 
-  // Build JSON-LD schemas
   const schemas: string[] = [buildLocalBusinessJsonLd()];
   if (page) {
     if (page.pageType === 'service') {
@@ -144,7 +140,6 @@ function transformHtml(
     }
   }
 
-  // Build injection block: new meta description + JSON-LD scripts
   const schemaScripts = schemas
     .map((s) => `<script type="application/ld+json">${s}</script>`)
     .join('');
@@ -153,18 +148,12 @@ function transformHtml(
     : '';
   const injection = metaTag + schemaScripts;
 
-  // 1. Remove existing meta description (before injecting new one)
   if (page) {
-    html = html.replace(
-      /<meta\s+name=["']description["'][^>]*>/gi,
-      '',
-    );
+    html = html.replace(/<meta\s+name=["']description["'][^>]*>/gi, '');
   }
 
-  // 2. Inject schemas + new meta description before </head>
   html = html.replace('</head>', `${injection}</head>`);
 
-  // 3. Replace <title>
   if (page) {
     html = html.replace(
       /<title>[^<]*<\/title>/i,
@@ -172,7 +161,6 @@ function transformHtml(
     );
   }
 
-  // 4. Update canonical URL
   const canonicalHref = `${CANONICAL_HOST}${norm}`;
   html = html.replace(
     /<link\s+rel=["']canonical["']\s+href=["'][^"']*["'][^>]*>/gi,
@@ -182,10 +170,10 @@ function transformHtml(
   return html;
 }
 
-// ── Analytics reporting (fire-and-forget via waitUntil) ──
+// ── Analytics reporting ──
 
 const DASHBOARD_URL = 'https://geo-dashboard.blake-designing.workers.dev';
-const DASHBOARD_CLIENT = 'virum';
+const DASHBOARD_CLIENT = "virum";
 
 async function reportTraffic(
   category: string,
@@ -210,7 +198,7 @@ async function reportTraffic(
   }
 }
 
-// ── UA classification (for logging only — all visitors get identical content) ──
+// ── UA classification ──
 
 const AI_RETRIEVAL_BOTS: Record<string, string> = {
   'OAI-SearchBot': 'OAI-SearchBot',
@@ -260,11 +248,9 @@ export default async function handler(
 ): Promise<Response> {
   const url = new URL(request.url);
 
-  // Static routes
   if (url.pathname === '/robots.txt') return serveRobotsTxt();
   if (url.pathname === '/sitemap.xml') return serveSitemap();
 
-  // Fetch from origin (www subdomain stays pointing at one.com)
   const originUrl = `${ORIGIN_HOST}${url.pathname}${url.search}`;
   const originResponse = await fetch(originUrl, {
     method: request.method,
@@ -277,22 +263,17 @@ export default async function handler(
 
   const contentType = originResponse.headers.get('content-type') || '';
 
-  // Non-HTML or error responses: pass through unchanged
   if (!contentType.includes('text/html') || !originResponse.ok) {
     const visitorUA = request.headers.get('user-agent') || '';
     const { category, botName } = classifyUA(visitorUA);
     const geoStatus = !originResponse.ok ? 'skipped_non2xx' : 'passthrough_nonhtml';
-    console.log(
-      `[GEO] ${geoStatus} | ${category}:${botName} | ${url.pathname}`,
-    );
-    // Report errors but skip non-HTML assets (CSS/images are noise)
+    console.log(`[GEO] ${geoStatus} | ${category}:${botName} | ${url.pathname}`);
     if (geoStatus === 'skipped_non2xx') {
       context.waitUntil(reportTraffic(category, botName, url.pathname, geoStatus, 'unknown'));
     }
     return originResponse;
   }
 
-  // HTML response: transform and inject GEO data
   const originalHtml = await originResponse.text();
   const transformedHtml = transformHtml(originalHtml, url.pathname);
 
@@ -302,14 +283,13 @@ export default async function handler(
   const { category, botName } = classifyUA(visitorUA);
   const geoStatus = page ? 'injected' : 'passthrough';
   const pageType = page?.pageType ?? 'unknown';
-  console.log(
-    `[GEO] ${geoStatus} | ${category}:${botName} | ${url.pathname} | ${pageType}`,
-  );
+  console.log(`[GEO] ${geoStatus} | ${category}:${botName} | ${url.pathname} | ${pageType}`);
   context.waitUntil(reportTraffic(category, botName, url.pathname, geoStatus, pageType));
 
-  // Forward original response headers, override content-type and cache
   const responseHeaders = new Headers(originResponse.headers);
   responseHeaders.set('Content-Type', 'text/html; charset=utf-8');
+  responseHeaders.set('Cache-Control', 'public, max-age=0, must-revalidate');
+  responseHeaders.set('Vercel-CDN-Cache-Control', 's-maxage=300, stale-while-revalidate=60');
   responseHeaders.delete('content-length');
   responseHeaders.delete('content-encoding');
 

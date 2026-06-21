@@ -9,5 +9,8 @@
     "outDir": "dist",
     "rootDir": "."
   },
-  "include": ["api/**/*.ts", "lib/**/*.ts", "test/**/*.ts"]
+  "include": [
+    "api/**/*.ts",
+    "lib/**/*.ts"
+  ]
 }
