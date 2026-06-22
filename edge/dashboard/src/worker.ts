@@ -467,6 +467,9 @@ async function renderBlock1(env: Env, days: number, config: ClientConfig): Promi
   const seoTotal = categoryRows
     .filter((r) => r.category === "seo_crawler")
     .reduce((s, r) => s + (Number(r.visits) || 0), 0);
+  const visitorTotal = categoryRows
+    .filter((r) => r.category === "visitor")
+    .reduce((s, r) => s + (Number(r.visits) || 0), 0);
 
   // Pie chart data — bots only, visitors excluded (they pass through unchanged)
   const pieData = categoryRows
@@ -521,10 +524,11 @@ async function renderBlock1(env: Env, days: number, config: ClientConfig): Promi
 
   return `<div class="section">
 <h2>1. Bot Traffic Overview</h2>
-<div class="grid grid-3" style="margin-bottom:20px">
-  ${renderStatCard(fmt(total), "Total Requests", `Last ${days} days`)}
+<div class="grid grid-4" style="margin-bottom:20px">
+  ${renderStatCard(fmt(total), "Total Requests", `${fmt(aiTotal)} AI · ${fmt(seoTotal)} SEO · ${fmt(visitorTotal)} visitors`)}
   ${renderStatCard(fmt(aiTotal), "AI Retrieval Bots", "ChatGPT, Perplexity, Claude…")}
   ${renderStatCard(fmt(seoTotal), "SEO Crawlers", "Googlebot, Bingbot…")}
+  ${renderStatCard(fmt(visitorTotal), "Visitors Served", "Transparent passthrough — zero friction")}
 </div>
 <div class="grid grid-2">
   <div class="card">
@@ -533,7 +537,7 @@ async function renderBlock1(env: Env, days: number, config: ClientConfig): Promi
       <div class="pie-chart">${svgPieChart(pieData)}</div>
       <div class="pie-legend">
         ${pieData.map((d) => `<div class="legend-item"><div class="legend-dot" style="background:${d.color}"></div>${escHtml(d.label)}: ${fmt(d.value)}</div>`).join("")}
-        <div style="font-size:11px;color:#475569;margin-top:8px;line-height:1.4">Human visitors & unclassified traffic pass through the proxy unchanged — not shown here.</div>
+        <div style="font-size:11px;color:#475569;margin-top:8px;line-height:1.4">Bot traffic only — ${fmt(visitorTotal)} human visitors served transparently via the same proxy.</div>
       </div>
     </div>
   </div>
