@@ -1,0 +1,22 @@
+name = "foundbyai-worker"
+main = "src/worker.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+SITE_URL = "https://foundbyai.dk"
+GEO_PROXY_IP = "76.76.21.21"
+
+[[kv_namespaces]]
+binding = "DASHBOARD_KV"
+id = "76d59151b3934aa1b29306d6b6301293"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Secrets (set via: wrangler secret put <NAME>)
+# ANTHROPIC_API_KEY
+# STRIPE_SECRET_KEY
+# STRIPE_WEBHOOK_SECRET
+# STRIPE_PRICE_ID
+# RESEND_API_KEY

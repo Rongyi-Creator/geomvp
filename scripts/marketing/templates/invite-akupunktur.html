@@ -1,0 +1,75 @@
+<!-- Akupunktur invite template — variables: {{NAME}}, {{DOMAIN}}, {{COMPETITOR}}, {{TOKEN_URL}} -->
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:system-ui,-apple-system,sans-serif">
+<div style="max-width:520px;margin:0 auto;padding:32px 16px">
+
+  <div style="background:white;border-radius:12px;padding:32px;border:1px solid #e2e8f0">
+
+    <p style="color:#374151;font-size:15px;line-height:1.7;margin:0 0 20px">
+      Hej,
+    </p>
+
+    <p style="color:#374151;font-size:15px;line-height:1.7;margin:0 0 20px">
+      Jeg testede i dag, hvad ChatGPT svarer, når man søger
+      <strong>"bedste akupunktur i København"</strong>.
+    </p>
+
+    <p style="color:#374151;font-size:15px;line-height:1.7;margin:0 0 20px">
+      <strong>{{COMPETITOR}}</strong> bliver anbefalet — men
+      <strong>{{NAME}}</strong> dukker ikke op.
+    </p>
+
+    <p style="color:#374151;font-size:15px;line-height:1.7;margin:0 0 20px">
+      Årsagen er teknisk: {{DOMAIN}} mangler et "AI-læsbart lag" som
+      ChatGPT og Perplexity kræver for at anbefale en klinik.
+    </p>
+
+    <p style="color:#374151;font-size:15px;line-height:1.7;margin:0 0 24px">
+      Vi har analyseret jeres hjemmeside og kan tilføje dette lag —
+      <strong>uden at ændre noget på selve sitet</strong>.
+    </p>
+
+    <div style="background:#eff6ff;border-radius:8px;padding:18px 20px;margin-bottom:24px">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#2563eb;text-transform:uppercase;letter-spacing:.06em">
+        Case study · Virum Akupunktur (3 dage efter aktivering)
+      </p>
+      <ul style="margin:0;padding-left:18px;color:#1e40af;font-size:14px;line-height:1.8">
+        <li>12 AI-crawler-besøg (ChatGPT, Perplexity, Claude)</li>
+        <li>AI-brandnævnelse: fra 0 → 2 ud af 15 forespørgsler</li>
+        <li>Domæne citeret: 5 ud af 15 forespørgsler</li>
+      </ul>
+    </div>
+
+    <p style="color:#374151;font-size:15px;line-height:1.7;margin:0 0 24px">
+      → Se hvad AI mangler om {{NAME}}:
+    </p>
+
+    <div style="text-align:center;margin-bottom:24px">
+      <a href="{{TOKEN_URL}}"
+         style="display:inline-block;background:#2563eb;color:white;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:600;font-size:15px">
+        Se din AI-synlighedsanalyse →
+      </a>
+      <p style="margin:10px 0 0;font-size:12px;color:#94a3b8">De første 30 dage er gratis</p>
+    </div>
+
+    <p style="color:#374151;font-size:15px;line-height:1.7;margin:0 0 8px">
+      Venlig hilsen,<br>
+      Blake<br>
+      <a href="https://foundbyai.dk" style="color:#2563eb;text-decoration:none">foundbyai.dk</a>
+    </p>
+
+  </div>
+
+  <p style="text-align:center;font-size:11px;color:#cbd5e1;margin-top:20px;line-height:1.6">
+    Du modtager denne e-mail, fordi {{NAME}} er registreret som erhvervsvirksomhed.<br>
+    <a href="{{TOKEN_URL}}?unsubscribe=1" style="color:#94a3b8">Afmeld fremtidige e-mails</a>
+  </p>
+
+</div>
+</body>
+</html>
