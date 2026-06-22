@@ -1466,6 +1466,11 @@ export default {
     // API: Audit CSV export
     if (path === "/api/export/ai-bot-visits.csv") {
       const days = parseInt(url.searchParams.get("days") || "7");
+      const clientId = "virum";
+      const csvConfigRaw = await env.DASHBOARD_KV.get(`config:${clientId}`, "text");
+      const csvConfig: ClientConfig = csvConfigRaw
+        ? (() => { try { return JSON.parse(csvConfigRaw) as ClientConfig; } catch { return { domain: "virumakupunktur.dk", activeSince: "" }; } })()
+        : { domain: "virumakupunktur.dk", activeSince: "" };
       const endDate = new Date(); endDate.setDate(endDate.getDate() - 1);
       const startDate = new Date(); startDate.setDate(startDate.getDate() - days);
       const range = `${startDate.toISOString().slice(0, 10)} to ${endDate.toISOString().slice(0, 10)}`;
@@ -1474,6 +1479,8 @@ export default {
       const STATUS_LABEL: Record<string, string> = { injected: "GEO Schema Injected", passthrough: "Content Served", passthrough_nonhtml: "Asset Served", skipped_non2xx: "Non-2xx Skipped" };
       const auditHeader = [
         `# GEO Effect — AI Bot Activity Report`,
+        `# Client: ${csvConfig.domain}`,
+        `# Client ID: ${clientId}`,
         `# Period: Last ${days} days (${range})`,
         `# Generated: ${generatedAt}`,
         `#`,
@@ -1497,7 +1504,7 @@ export default {
       return new Response(csv, {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": `attachment; filename="geo-audit-${days}d.csv"`,
+          "Content-Disposition": `attachment; filename="geo-audit-${csvConfig.domain}-${days}d.csv"`,
           "Cache-Control": "no-store",
         },
       });
