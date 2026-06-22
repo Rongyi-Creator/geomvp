@@ -85,6 +85,14 @@ function queryDailyAIBots(dataset: string, days: number): string {
   return `SELECT toDate(timestamp) AS day, blob2 AS bot_name, SUM(_sample_interval) AS visits FROM ${dataset} WHERE blob1 = 'ai_retrieval' AND timestamp >= NOW() - INTERVAL '${days}' DAY GROUP BY day, bot_name ORDER BY day`;
 }
 
+function queryDailyAIBotsByPage(dataset: string, days: number): string {
+  return `SELECT toDate(timestamp) AS day, blob2 AS bot_name, blob3 AS page, SUM(_sample_interval) AS visits FROM ${dataset} WHERE blob1 = 'ai_retrieval' AND timestamp >= NOW() - INTERVAL '${days}' DAY GROUP BY day, bot_name, page ORDER BY day, bot_name, visits DESC`;
+}
+
+function queryAIBotLog(dataset: string, days: number): string {
+  return `SELECT timestamp, blob2 AS bot_name, blob3 AS page, blob4 AS geo_status FROM ${dataset} WHERE blob1 = 'ai_retrieval' AND timestamp >= NOW() - INTERVAL '${days}' DAY ORDER BY timestamp DESC LIMIT 500`;
+}
+
 // ── AE SQL API caller ──
 
 async function queryAE(env: Env, sql: string): Promise<AERow[]> {
@@ -157,70 +165,95 @@ function svgLineChart(
   series: { label: string; color: string; points: { x: number; y: number }[] }[],
   xLabels: string[],
   width = 600,
-  height = 240
+  height = 240,
+  activationIdx = -1,
+  interactive = false
 ): string {
-  const legendH = 28;
+  const legendH = interactive ? 0 : 28;
+  const extraBottom = activationIdx >= 0 ? 16 : 0;
+  const totalH = height + extraBottom;
   const pad = { top: 8 + legendH, right: 20, bottom: 30, left: 50 };
   const w = width - pad.left - pad.right;
   const h = height - pad.top - pad.bottom;
 
   let maxY = 0;
-  for (const s of series) {
-    for (const p of s.points) {
-      if (p.y > maxY) maxY = p.y;
-    }
-  }
+  for (const s of series) for (const p of s.points) if (p.y > maxY) maxY = p.y;
   if (maxY === 0) maxY = 1;
 
-  let svg = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${width}px">`;
-  svg += `<rect width="${width}" height="${height}" fill="#0f172a" rx="8"/>`;
+  // Stable chart ID from series labels (same labels → same ID across renders)
+  const chartId = interactive
+    ? `lc${series.map(s => s.label).join('').split('').reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 0).toString(36)}`
+    : '';
 
-  // Legend
-  let legendX = pad.left;
-  for (const s of series) {
-    svg += `<circle cx="${legendX + 5}" cy="16" r="5" fill="${s.color}"/>`;
-    svg += `<text x="${legendX + 14}" y="20" fill="#cbd5e1" font-size="11">${s.label}</text>`;
-    legendX += s.label.length * 7 + 30;
+  let svgBody = `<rect width="${width}" height="${totalH}" fill="#0f172a" rx="8"/>`;
+
+  // Static legend (non-interactive only)
+  if (!interactive) {
+    let legendX = pad.left;
+    for (const s of series) {
+      svgBody += `<circle cx="${legendX + 5}" cy="16" r="5" fill="${s.color}"/>`;
+      svgBody += `<text x="${legendX + 14}" y="20" fill="#cbd5e1" font-size="11">${s.label}</text>`;
+      legendX += s.label.length * 7 + 30;
+    }
   }
 
   // Grid lines
   for (let i = 0; i <= 4; i++) {
     const y = pad.top + (h * i) / 4;
     const val = Math.round(maxY * (1 - i / 4));
-    svg += `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="#1e293b" stroke-width="1"/>`;
-    svg += `<text x="${pad.left - 8}" y="${y + 4}" text-anchor="end" fill="#64748b" font-size="10">${val}</text>`;
+    svgBody += `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="#1e293b" stroke-width="1"/>`;
+    svgBody += `<text x="${pad.left - 8}" y="${y + 4}" text-anchor="end" fill="#64748b" font-size="10">${val}</text>`;
   }
 
-  // X labels
+  // X labels (thin when many)
   const step = xLabels.length > 1 ? w / (xLabels.length - 1) : 0;
+  const labelSkip = Math.max(1, Math.ceil(xLabels.length / 8));
   for (let i = 0; i < xLabels.length; i++) {
+    if (i % labelSkip !== 0 && i !== xLabels.length - 1) continue;
     const x = pad.left + step * i;
-    svg += `<text x="${x}" y="${height - 5}" text-anchor="middle" fill="#64748b" font-size="9">${xLabels[i]}</text>`;
+    svgBody += `<text x="${x}" y="${height - 5}" text-anchor="middle" fill="#64748b" font-size="9">${xLabels[i]}</text>`;
   }
 
   // Lines + data labels
   for (const s of series) {
     if (s.points.length === 0) continue;
-    const pts = s.points
-      .map((p) => {
-        const x = pad.left + (p.x / Math.max(xLabels.length - 1, 1)) * w;
-        const y = pad.top + h - (p.y / maxY) * h;
-        return `${x},${y}`;
-      })
-      .join(" ");
-    svg += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>`;
+    const safeId = s.label.replace(/[^a-z0-9]/gi, '_');
+    if (interactive) svgBody += `<g class="geo-series" id="${chartId}-${safeId}">`;
+    const pts = s.points.map((p) => {
+      const x = pad.left + (p.x / Math.max(xLabels.length - 1, 1)) * w;
+      const y = pad.top + h - (p.y / maxY) * h;
+      return `${x},${y}`;
+    }).join(" ");
+    svgBody += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>`;
     for (const p of s.points) {
       const x = pad.left + (p.x / Math.max(xLabels.length - 1, 1)) * w;
       const y = pad.top + h - (p.y / maxY) * h;
-      svg += `<circle cx="${x}" cy="${y}" r="3" fill="${s.color}"/>`;
-      if (p.y > 0) {
-        svg += `<text x="${x}" y="${y - 8}" text-anchor="middle" fill="${s.color}" font-size="9" font-weight="600">${p.y}</text>`;
-      }
+      svgBody += `<circle cx="${x}" cy="${y}" r="3" fill="${s.color}"/>`;
+      if (p.y > 0) svgBody += `<text x="${x}" y="${y - 8}" text-anchor="middle" fill="${s.color}" font-size="9" font-weight="600">${p.y}</text>`;
     }
+    if (interactive) svgBody += `</g>`;
   }
 
-  svg += `</svg>`;
-  return svg;
+  // Activation marker
+  if (activationIdx >= 0 && activationIdx < xLabels.length) {
+    const markerX = pad.left + (activationIdx / Math.max(xLabels.length - 1, 1)) * w;
+    svgBody += `<line x1="${markerX}" y1="${pad.top}" x2="${markerX}" y2="${pad.top + h}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+    svgBody += `<text x="${markerX}" y="${height + extraBottom - 4}" text-anchor="middle" fill="#f59e0b" font-size="9" font-weight="600">GEO Active</text>`;
+  }
+
+  const svgEl = `<svg viewBox="0 0 ${width} ${totalH}" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block">${svgBody}</svg>`;
+
+  if (!interactive) return svgEl;
+
+  // Interactive: HTML legend buttons + SVG with series groups
+  const legendHtml = `<div id="${chartId}-legend" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+${series.map(s => {
+    const safeId = s.label.replace(/[^a-z0-9]/gi, '_');
+    return `<button class="geo-lb" data-sid="${safeId}" onclick="geoToggle('${chartId}','${safeId}')" style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:9999px;font-size:11px;font-weight:600;border:1.5px solid ${s.color};color:${s.color};background:none;cursor:pointer;transition:opacity .15s"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color}"></span>${escHtml(s.label)}</button>`;
+  }).join('\n')}
+</div>`;
+
+  return `<div id="${chartId}">${legendHtml}${svgEl}</div>`;
 }
 
 function svgStackedBarChart(
@@ -289,7 +322,7 @@ function svgStackedBarChart(
   if (activationIdx >= 0 && activationIdx < days.length) {
     const markerX = offsetX + activationIdx * (barW + barGap) + barW / 2;
     svg += `<line x1="${markerX}" y1="${pad.top}" x2="${markerX}" y2="${pad.top + h}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,3"/>`;
-    svg += `<text x="${markerX}" y="${pad.top - 4}" text-anchor="middle" fill="#f59e0b" font-size="9" font-weight="600">GEO ON</text>`;
+    svg += `<text x="${markerX}" y="${pad.top - 4}" text-anchor="middle" fill="#f59e0b" font-size="9" font-weight="600">GEO Active</text>`;
   }
 
   svg += `</svg>`;
@@ -353,7 +386,10 @@ td{padding:10px 12px;border-bottom:1px solid #1e293b}
 .insight-banner h3{color:#f8fafc;font-size:18px;margin-bottom:4px}
 .insight-banner p{color:#94a3b8;font-size:14px;line-height:1.5}
 .layer-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:8px;font-weight:600}
-</style>`;
+</style>
+<script>
+function geoToggle(cid,sid){var chart=document.getElementById(cid);if(!chart)return;var allG=chart.querySelectorAll('.geo-series');var allB=chart.querySelectorAll('.geo-lb');var target=document.getElementById(cid+'-'+sid);var isSolo=target&&target.getAttribute('data-solo')==='1';if(isSolo){allG.forEach(function(g){g.style.display='';g.removeAttribute('data-solo')});allB.forEach(function(b){b.style.opacity='1'})}else{allG.forEach(function(g){g.style.display='none';g.removeAttribute('data-solo')});allB.forEach(function(b){b.style.opacity='0.35'});if(target){target.style.display='';target.setAttribute('data-solo','1')}var ab=chart.querySelector('.geo-lb[data-sid="'+sid+'"]');if(ab)ab.style.opacity='1'}}
+</script>`;
 }
 
 function renderTimeNav(days: number, view: string): string {
@@ -415,12 +451,12 @@ function badgeClass(category: string): string {
 
 // ── Block 1: Bot Traffic ──
 
-async function renderBlock1(env: Env, days: number): Promise<string> {
+async function renderBlock1(env: Env, days: number, config: ClientConfig): Promise<string> {
   const ds = env.AE_DATASET;
-  const [categoryRows, botRows, trendRows, totalRows] = await Promise.all([
+  const [categoryRows, botRows, aiBotRows, totalRows] = await Promise.all([
     queryAE(env, queryCategoryBreakdown(ds, days)),
     queryAE(env, queryBotDetails(ds, days)),
-    queryAE(env, queryDailyTrend(ds, days)),
+    queryAE(env, queryDailyAIBots(ds, days)),
     queryAE(env, queryTotalRequests(ds, days)),
   ]);
 
@@ -432,29 +468,43 @@ async function renderBlock1(env: Env, days: number): Promise<string> {
     .filter((r) => r.category === "seo_crawler")
     .reduce((s, r) => s + (Number(r.visits) || 0), 0);
 
-  // Pie chart data
-  const pieData = categoryRows.map((r) => ({
-    label: LABELS[r.category as string] ?? String(r.category),
-    value: Number(r.visits) || 0,
-    color: COLORS[r.category as string] ?? "#6b7280",
-  }));
+  // Pie chart data — bots only, visitors excluded (they pass through unchanged)
+  const pieData = categoryRows
+    .filter((r) => r.category !== "visitor")
+    .map((r) => ({
+      label: LABELS[r.category as string] ?? String(r.category),
+      value: Number(r.visits) || 0,
+      color: COLORS[r.category as string] ?? "#6b7280",
+    }));
 
-  // Daily trend → line chart (exclude today's partial data)
+  // Per-bot daily trend (exclude today's partial data)
   const todayStr = new Date().toISOString().slice(0, 10);
-  const dayMap = new Map<string, Record<string, number>>();
-  for (const r of trendRows) {
+  const dayBotMap = new Map<string, Map<string, number>>();
+  const allBotNames = new Set<string>();
+  for (const r of aiBotRows) {
     const day = String(r.day).slice(0, 10);
     if (day === todayStr) continue;
-    if (!dayMap.has(day)) dayMap.set(day, {});
-    const m = dayMap.get(day)!;
-    m[r.category as string] = (m[r.category as string] || 0) + (Number(r.visits) || 0);
+    const bot = String(r.bot_name);
+    allBotNames.add(bot);
+    if (!dayBotMap.has(day)) dayBotMap.set(day, new Map());
+    const m = dayBotMap.get(day)!;
+    m.set(bot, (m.get(bot) || 0) + (Number(r.visits) || 0));
   }
-  const sortedDays = [...dayMap.keys()].sort();
+  // Fixed range matching selector — include zero-visit days
+  const rangeBase = new Date(); rangeBase.setHours(0, 0, 0, 0);
+  const sortedDays: string[] = [];
+  for (let i = days; i >= 1; i--) {
+    const d = new Date(rangeBase); d.setDate(d.getDate() - i);
+    sortedDays.push(d.toISOString().slice(0, 10));
+  }
+  const botNames = [...allBotNames].sort();
   const xLabels = sortedDays.map((d) => d.slice(5));
-  const lineSeries = ["ai_retrieval", "seo_crawler"].map((cat) => ({
-    label: LABELS[cat],
-    color: COLORS[cat],
-    points: sortedDays.map((d, i) => ({ x: i, y: dayMap.get(d)?.[cat] || 0 })),
+  const activationDate = config.activeSince ? new Date(config.activeSince).toISOString().slice(0, 10) : "";
+  const activationIdx = activationDate ? sortedDays.indexOf(activationDate) : -1;
+  const lineSeries = botNames.map((name) => ({
+    label: name,
+    color: AI_BOT_COLORS[name] || AI_BOT_DEFAULT_COLOR,
+    points: sortedDays.map((d, i) => ({ x: i, y: dayBotMap.get(d)?.get(name) || 0 })),
   }));
 
   // Bot detail table
@@ -483,6 +533,7 @@ async function renderBlock1(env: Env, days: number): Promise<string> {
       <div class="pie-chart">${svgPieChart(pieData)}</div>
       <div class="pie-legend">
         ${pieData.map((d) => `<div class="legend-item"><div class="legend-dot" style="background:${d.color}"></div>${escHtml(d.label)}: ${fmt(d.value)}</div>`).join("")}
+        <div style="font-size:11px;color:#475569;margin-top:8px;line-height:1.4">Human visitors & unclassified traffic pass through the proxy unchanged — not shown here.</div>
       </div>
     </div>
   </div>
@@ -492,11 +543,11 @@ async function renderBlock1(env: Env, days: number): Promise<string> {
   </div>
 </div>
 <div class="card" style="margin-top:20px">
-  <h3>Daily Trend (AI Retrieval + SEO)</h3>
-  <div style="font-size:12px;color:#64748b;margin-bottom:8px">Completed days only — today excluded to avoid partial-day distortion</div>
-  ${sortedDays.length > 0 ? svgLineChart(lineSeries, xLabels) : `<div class="empty">No trend data yet — data appears after DNS switch</div>`}
+  <h3>AI Bot Visits Per Day</h3>
+  <div style="font-size:12px;color:#64748b;margin-bottom:8px">Completed days only · today excluded · refreshes every ~5 min · Analytics Engine data has ~10 min lag</div>
+  ${lineSeries.length > 0 ? svgLineChart(lineSeries, xLabels, 800, 240, activationIdx, true) : '<div class="empty">No trend data yet — data appears after DNS switch</div>'}
 </div>
-<div class="data-source">Data source: Cloudflare Analytics Engine (third-party) · Each data point = one verified HTTP request to the edge proxy · <a href="/api/stats/${escHtml("virum")}?days=${days}">Export raw JSON</a></div>
+<div class="data-source">Data source: Cloudflare Analytics Engine (third-party) · Each data point = one verified HTTP request · <a href="/api/export/ai-bot-visits.csv?days=${days}">Export CSV</a></div>
 </div>`;
 }
 
@@ -576,10 +627,19 @@ async function renderBlock2(env: Env, days: number): Promise<string> {
 
 // ── Block 3: AI Search Visibility (OtterlyAI) ──
 
+function deltaHtml(curr: number, prev: number): string {
+  const d = curr - prev;
+  if (d === 0) return "";
+  const color = d > 0 ? "#10b981" : "#ef4444";
+  return ` <span style="font-size:14px;color:${color}">${d > 0 ? "↑" : "↓"}${Math.abs(d)}</span>`;
+}
+
 async function renderBlock3(env: Env, client: string): Promise<string> {
-  const [promptsRaw, citationsRaw] = await Promise.all([
+  const [promptsRaw, citationsRaw, promptsPrevRaw, citationsPrevRaw] = await Promise.all([
     env.DASHBOARD_KV.get(`otterly_prompts:${client}`, "text"),
     env.DASHBOARD_KV.get(`otterly_citations:${client}`, "text"),
+    env.DASHBOARD_KV.get(`otterly_prompts:${client}:prev`, "text"),
+    env.DASHBOARD_KV.get(`otterly_citations:${client}:prev`, "text"),
   ]);
 
   if (!promptsRaw && !citationsRaw) {
@@ -600,10 +660,15 @@ async function renderBlock3(env: Env, client: string): Promise<string> {
 
   let prompts: PromptsStored | null = null;
   let citations: CitationsStored | null = null;
+  let promptsPrev: PromptsStored | null = null;
+  let citationsPrev: CitationsStored | null = null;
   if (promptsRaw) try { prompts = JSON.parse(promptsRaw); } catch { /* invalid */ }
   if (citationsRaw) try { citations = JSON.parse(citationsRaw); } catch { /* invalid */ }
+  if (promptsPrevRaw) try { promptsPrev = JSON.parse(promptsPrevRaw); } catch { /* invalid */ }
+  if (citationsPrevRaw) try { citationsPrev = JSON.parse(citationsPrevRaw); } catch { /* invalid */ }
 
   const updatedAt = prompts?.updatedAt || citations?.updatedAt || "";
+  const prevDate = promptsPrev?.updatedAt || citationsPrev?.updatedAt || "";
 
   // ── Stat cards with interpretation ──
   let statsHtml = `<div class="grid grid-4" style="margin-bottom:20px">`;
@@ -611,22 +676,26 @@ async function renderBlock3(env: Env, client: string): Promise<string> {
     const brandPct = prompts.total > 0 ? (prompts.brandMentioned / prompts.total) * 100 : 0;
     const brandStatus: "good" | "neutral" | "warn" | "bad" = brandPct >= 30 ? "good" : brandPct >= 10 ? "neutral" : "warn";
     const brandInsight = `In ${prompts.total} AI searches for your industry, your brand was mentioned ${prompts.brandMentioned} time${prompts.brandMentioned !== 1 ? "s" : ""} (${brandPct.toFixed(0)}%)`;
-    statsHtml += renderInsightCard(`${prompts.brandMentioned}/${prompts.total}`, "Brand Mentioned", brandInsight, brandStatus);
+    const brandDelta = promptsPrev ? deltaHtml(prompts.brandMentioned, promptsPrev.brandMentioned) : "";
+    statsHtml += renderInsightCard(`${prompts.brandMentioned}/${prompts.total}${brandDelta}`, "Brand Mentioned", brandInsight, brandStatus);
 
     const domainPct = prompts.total > 0 ? (prompts.domainCited / prompts.total) * 100 : 0;
     const domainStatus: "good" | "neutral" | "warn" | "bad" = domainPct >= 30 ? "good" : domainPct >= 10 ? "neutral" : "warn";
     const domainInsight = `Your website was cited as a source in ${domainPct.toFixed(0)}% of relevant AI queries`;
-    statsHtml += renderInsightCard(`${prompts.domainCited}/${prompts.total}`, "Domain Cited", domainInsight, domainStatus);
+    const domainDelta = promptsPrev ? deltaHtml(prompts.domainCited, promptsPrev.domainCited) : "";
+    statsHtml += renderInsightCard(`${prompts.domainCited}/${prompts.total}${domainDelta}`, "Domain Cited", domainInsight, domainStatus);
   }
   if (citations) {
     const share = citations.total > 0 ? ((citations.myDomainCitations / citations.total) * 100) : 0;
     const shareStr = share.toFixed(1);
     const citInsight = `${citations.total} total citations across all AI engines in your market`;
-    statsHtml += renderInsightCard(fmt(citations.total), "Total Citations", citInsight, "neutral");
+    const totalDelta = citationsPrev ? deltaHtml(citations.total, citationsPrev.total) : "";
+    statsHtml += renderInsightCard(`${fmt(citations.total)}${totalDelta}`, "Total Citations", citInsight, "neutral");
 
     const myStatus: "good" | "neutral" | "warn" | "bad" = share >= 5 ? "good" : share >= 1 ? "neutral" : "warn";
     const myInsight = `${shareStr}% of all AI citations point to your site — ${share >= 5 ? "strong presence" : share >= 1 ? "growing, room to improve" : "early stage, GEO is building momentum"}`;
-    statsHtml += renderInsightCard(fmt(citations.myDomainCitations), "My Citations", myInsight, myStatus);
+    const myDelta = citationsPrev ? deltaHtml(citations.myDomainCitations, citationsPrev.myDomainCitations) : "";
+    statsHtml += renderInsightCard(`${fmt(citations.myDomainCitations)}${myDelta}`, "My Citations", myInsight, myStatus);
   }
   statsHtml += `</div>`;
 
@@ -692,7 +761,7 @@ async function renderBlock3(env: Env, client: string): Promise<string> {
 
   return `<div class="section">
 <h2>3. AI Search Visibility <span class="badge badge-amber" style="font-size:11px;vertical-align:middle">OtterlyAI</span></h2>
-<div class="timestamp" style="margin-bottom:16px">Last updated: ${escHtml(updatedAt)}</div>
+<div class="timestamp" style="margin-bottom:16px">Last updated: ${escHtml(updatedAt)}${prevDate ? ` · vs ${escHtml(prevDate)}` : ""}</div>
 ${statsHtml}
 <div class="grid grid-2">
   <div class="card">
@@ -915,7 +984,7 @@ async function renderClientFunnel(env: Env, days: number, config: ClientConfig):
 <div class="card">
   <h3>AI Bot Visits Per Day</h3>
   <div style="font-size:12px;color:#64748b;margin-bottom:8px">Each bar shows which AI assistants visited your site that day</div>
-  ${chartDays.length > 0 ? svgStackedBarChart(chartDays, activationIdx) : `<div class="empty">Data will appear once AI bots start visiting</div>`}
+  ${chartDays.length > 0 ? svgStackedBarChart(chartDays, activationIdx) : '<div class="empty">Data will appear once AI bots start visiting</div>'}
 </div>
 <div class="data-source">Data source: Cloudflare Analytics Engine (third-party infrastructure) · Each data point = one verified HTTP request</div>
 </div>`;
@@ -1229,6 +1298,8 @@ async function handleOtterlyPromptsUpload(request: Request, env: Env, client: st
   if (!body.trim()) {
     return new Response(JSON.stringify({ error: "Empty body" }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
+  const existing = await env.DASHBOARD_KV.get(`otterly_prompts:${client}`, "text");
+  if (existing) await env.DASHBOARD_KV.put(`otterly_prompts:${client}:prev`, existing);
   const parsed = parsePromptsCsv(body);
   const stored = { updatedAt: new Date().toISOString().slice(0, 10), ...parsed };
   await env.DASHBOARD_KV.put(`otterly_prompts:${client}`, JSON.stringify(stored));
@@ -1243,6 +1314,8 @@ async function handleOtterlyCitationsUpload(request: Request, env: Env, client: 
   if (!body.trim()) {
     return new Response(JSON.stringify({ error: "Empty body" }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
+  const existingCit = await env.DASHBOARD_KV.get(`otterly_citations:${client}`, "text");
+  if (existingCit) await env.DASHBOARD_KV.put(`otterly_citations:${client}:prev`, existingCit);
   const reqUrl = new URL(request.url);
   const myDomain = reqUrl.searchParams.get("domain") || `${client}.dk`;
   const parsed = parseCitationsCsv(body, myDomain);
@@ -1373,7 +1446,7 @@ export default {
       return handleTrafficEvent(request, env);
     }
 
-    // API: Stats JSON (for future frontend)
+    // API: Stats JSON
     if (path.startsWith("/api/stats/")) {
       const ds = env.AE_DATASET;
       const days = parseInt(url.searchParams.get("days") || "7");
@@ -1383,6 +1456,46 @@ export default {
       ]);
       return new Response(JSON.stringify({ categories, bots }), {
         headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // API: Audit CSV export
+    if (path === "/api/export/ai-bot-visits.csv") {
+      const days = parseInt(url.searchParams.get("days") || "7");
+      const endDate = new Date(); endDate.setDate(endDate.getDate() - 1);
+      const startDate = new Date(); startDate.setDate(startDate.getDate() - days);
+      const range = `${startDate.toISOString().slice(0, 10)} to ${endDate.toISOString().slice(0, 10)}`;
+      const generatedAt = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
+      const logRows = await queryAE(env, queryAIBotLog(env.AE_DATASET, days));
+      const STATUS_LABEL: Record<string, string> = { injected: "GEO Schema Injected", passthrough: "Content Served", passthrough_nonhtml: "Asset Served", skipped_non2xx: "Non-2xx Skipped" };
+      const auditHeader = [
+        `# GEO Effect — AI Bot Activity Report`,
+        `# Period: Last ${days} days (${range})`,
+        `# Generated: ${generatedAt}`,
+        `#`,
+        `# Each record is an individual AI bot request captured at the network edge.`,
+        `# Bot identifiers are standard user-agent strings used by each AI company:`,
+        `#   ChatGPT-User  — OpenAI ChatGPT`,
+        `#   OAI-SearchBot — OpenAI SearchGPT`,
+        `#   PerplexityBot — Perplexity AI`,
+        `#   ClaudeBot     — Anthropic Claude`,
+        `#   GPTBot        — OpenAI training crawler`,
+        `#`,
+        `Timestamp,Bot,Page,Status`,
+      ].join("\n");
+      let csv = auditHeader + "\n";
+      for (const r of logRows) {
+        const ts = String(r.timestamp).slice(0, 19).replace(' ', 'T') + 'Z';
+        const page = `"${String(r.page).replace(/"/g, '""')}"`;
+        const status = STATUS_LABEL[String(r.geo_status)] ?? String(r.geo_status);
+        csv += `${ts},${String(r.bot_name)},${page},${status}\n`;
+      }
+      return new Response(csv, {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="geo-audit-${days}d.csv"`,
+          "Cache-Control": "no-store",
+        },
       });
     }
 
@@ -1436,7 +1549,7 @@ ${results}
 
     // Ops view: all blocks
     const [block1, block2, block3, block4, block5] = await Promise.all([
-      renderBlock1(env, days),
+      renderBlock1(env, days, config),
       renderBlock2(env, days),
       renderBlock3(env, client),
       renderBlock4(env),
