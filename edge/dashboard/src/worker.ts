@@ -46,6 +46,11 @@ interface BaselineData {
   otterlyScore: number | null;
 }
 
+interface ClientConfig {
+  domain: string;
+  activeSince: string;
+}
+
 // ── Analytics Engine SQL queries ──
 
 function queryCategoryBreakdown(dataset: string, days: number): string {
@@ -74,6 +79,10 @@ function queryCoverageGaps(dataset: string, days: number): string {
 
 function queryTotalRequests(dataset: string, days: number): string {
   return `SELECT SUM(_sample_interval) AS total FROM ${dataset} WHERE timestamp >= NOW() - INTERVAL '${days}' DAY`;
+}
+
+function queryDailyAIBots(dataset: string, days: number): string {
+  return `SELECT toDate(timestamp) AS day, blob2 AS bot_name, SUM(_sample_interval) AS visits FROM ${dataset} WHERE blob1 = 'ai_retrieval' AND timestamp >= NOW() - INTERVAL '${days}' DAY GROUP BY day, bot_name ORDER BY day`;
 }
 
 // ── AE SQL API caller ──
@@ -148,9 +157,10 @@ function svgLineChart(
   series: { label: string; color: string; points: { x: number; y: number }[] }[],
   xLabels: string[],
   width = 600,
-  height = 200
+  height = 240
 ): string {
-  const pad = { top: 20, right: 20, bottom: 30, left: 50 };
+  const legendH = 28;
+  const pad = { top: 8 + legendH, right: 20, bottom: 30, left: 50 };
   const w = width - pad.left - pad.right;
   const h = height - pad.top - pad.bottom;
 
@@ -164,6 +174,14 @@ function svgLineChart(
 
   let svg = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${width}px">`;
   svg += `<rect width="${width}" height="${height}" fill="#0f172a" rx="8"/>`;
+
+  // Legend
+  let legendX = pad.left;
+  for (const s of series) {
+    svg += `<circle cx="${legendX + 5}" cy="16" r="5" fill="${s.color}"/>`;
+    svg += `<text x="${legendX + 14}" y="20" fill="#cbd5e1" font-size="11">${s.label}</text>`;
+    legendX += s.label.length * 7 + 30;
+  }
 
   // Grid lines
   for (let i = 0; i <= 4; i++) {
@@ -180,7 +198,7 @@ function svgLineChart(
     svg += `<text x="${x}" y="${height - 5}" text-anchor="middle" fill="#64748b" font-size="9">${xLabels[i]}</text>`;
   }
 
-  // Lines
+  // Lines + data labels
   for (const s of series) {
     if (s.points.length === 0) continue;
     const pts = s.points
@@ -195,7 +213,83 @@ function svgLineChart(
       const x = pad.left + (p.x / Math.max(xLabels.length - 1, 1)) * w;
       const y = pad.top + h - (p.y / maxY) * h;
       svg += `<circle cx="${x}" cy="${y}" r="3" fill="${s.color}"/>`;
+      if (p.y > 0) {
+        svg += `<text x="${x}" y="${y - 8}" text-anchor="middle" fill="${s.color}" font-size="9" font-weight="600">${p.y}</text>`;
+      }
     }
+  }
+
+  svg += `</svg>`;
+  return svg;
+}
+
+function svgStackedBarChart(
+  days: { label: string; bots: { name: string; color: string; value: number }[] }[],
+  activationIdx: number,
+  width = 800,
+  height = 260
+): string {
+  const pad = { top: 36, right: 20, bottom: 30, left: 50 };
+  const w = width - pad.left - pad.right;
+  const h = height - pad.top - pad.bottom;
+
+  let maxY = 0;
+  for (const d of days) {
+    const sum = d.bots.reduce((s, b) => s + b.value, 0);
+    if (sum > maxY) maxY = sum;
+  }
+  if (maxY === 0) maxY = 1;
+
+  const allBots = new Map<string, string>();
+  for (const d of days) for (const b of d.bots) allBots.set(b.name, b.color);
+
+  let svg = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="width:100%">`;
+  svg += `<rect width="${width}" height="${height}" fill="#0f172a" rx="8"/>`;
+
+  // Legend
+  let legendX = pad.left;
+  for (const [name, color] of allBots) {
+    svg += `<circle cx="${legendX + 5}" cy="16" r="5" fill="${color}"/>`;
+    svg += `<text x="${legendX + 14}" y="20" fill="#cbd5e1" font-size="10">${name}</text>`;
+    legendX += name.length * 6.5 + 28;
+  }
+
+  // Grid
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + (h * i) / 4;
+    const val = Math.round(maxY * (1 - i / 4));
+    svg += `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="#1e293b" stroke-width="1"/>`;
+    svg += `<text x="${pad.left - 8}" y="${y + 4}" text-anchor="end" fill="#64748b" font-size="10">${val}</text>`;
+  }
+
+  // Bars
+  const barGap = 4;
+  const barW = days.length > 0 ? Math.min(40, (w - barGap * days.length) / days.length) : 20;
+  const totalBarSpace = days.length * (barW + barGap) - barGap;
+  const offsetX = pad.left + (w - totalBarSpace) / 2;
+
+  for (let i = 0; i < days.length; i++) {
+    const d = days[i];
+    const x = offsetX + i * (barW + barGap);
+    let yOffset = 0;
+    for (const b of d.bots) {
+      const barH = (b.value / maxY) * h;
+      const y = pad.top + h - yOffset - barH;
+      svg += `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" fill="${b.color}" rx="2"/>`;
+      if (barH > 14) {
+        svg += `<text x="${x + barW / 2}" y="${y + barH / 2 + 4}" text-anchor="middle" fill="white" font-size="9" font-weight="600">${b.value}</text>`;
+      }
+      yOffset += barH;
+    }
+    // X label
+    svg += `<text x="${x + barW / 2}" y="${height - 5}" text-anchor="middle" fill="#64748b" font-size="9">${d.label}</text>`;
+  }
+
+  // Activation marker
+  if (activationIdx >= 0 && activationIdx < days.length) {
+    const markerX = offsetX + activationIdx * (barW + barGap) + barW / 2;
+    svg += `<line x1="${markerX}" y1="${pad.top}" x2="${markerX}" y2="${pad.top + h}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+    svg += `<text x="${markerX}" y="${pad.top - 4}" text-anchor="middle" fill="#f59e0b" font-size="9" font-weight="600">GEO ON</text>`;
   }
 
   svg += `</svg>`;
@@ -244,25 +338,49 @@ td{padding:10px 12px;border-bottom:1px solid #1e293b}
 .change-up{color:#10b981}
 .change-down{color:#ef4444}
 .change-neutral{color:#94a3b8}
-.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
 .header-right{text-align:right}
 .live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:6px}
 .timestamp{font-size:12px;color:#64748b}
+.time-nav{display:flex;gap:6px;margin-bottom:28px}
+.time-pill{padding:5px 14px;border-radius:9999px;font-size:12px;font-weight:600;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer;text-decoration:none}
+.time-pill:hover{border-color:#475569;color:#cbd5e1}
+.time-pill.active{background:#3b82f6;border-color:#3b82f6;color:#fff}
+.data-source{font-size:11px;color:#475569;margin-top:12px}
+.data-source a{color:#64748b;text-decoration:underline}
 @media(max-width:768px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}.pie-container{flex-direction:column}}
+.insight-banner{background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);border:1px solid #334155;border-radius:12px;padding:20px 24px;margin-bottom:24px}
+.insight-banner h3{color:#f8fafc;font-size:18px;margin-bottom:4px}
+.insight-banner p{color:#94a3b8;font-size:14px;line-height:1.5}
+.layer-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:8px;font-weight:600}
 </style>`;
 }
 
-function renderHeader(client: string, generatedAt: string): string {
+function renderTimeNav(days: number, view: string): string {
+  const presets = [
+    { d: 7, label: "7D" },
+    { d: 14, label: "14D" },
+    { d: 30, label: "30D" },
+    { d: 90, label: "90D" },
+  ];
+  const viewParam = view !== "ops" ? `&view=${view}` : "";
+  return `<div class="time-nav">${presets.map(p =>
+    `<a href="?days=${p.d}${viewParam}" class="time-pill${p.d === days ? " active" : ""}">${p.label}</a>`
+  ).join("")}</div>`;
+}
+
+function renderHeader(config: ClientConfig, generatedAt: string, days: number): string {
   return `<div class="header">
 <div>
   <h1>GEO Effect Dashboard</h1>
-  <div class="subtitle">${escHtml(client)} — Edge Proxy Analytics</div>
+  <div class="subtitle">${escHtml(config.domain)} — GEO active since ${escHtml(config.activeSince)}</div>
 </div>
 <div class="header-right">
   <div><span class="live-dot"></span>Live Data</div>
   <div class="timestamp">Generated: ${escHtml(generatedAt)}</div>
 </div>
-</div>`;
+</div>
+${renderTimeNav(days, "ops")}`;
 }
 
 function renderStatCard(value: string, label: string, sub?: string): string {
@@ -270,6 +388,19 @@ function renderStatCard(value: string, label: string, sub?: string): string {
 <div class="stat-value">${value}</div>
 <div class="stat-label">${label}</div>
 ${sub ? `<div class="stat-sub">${sub}</div>` : ""}
+</div>`;
+}
+
+function renderInsightCard(
+  value: string,
+  label: string,
+  insight: string,
+  _status: "good" | "neutral" | "warn" | "bad" = "neutral"
+): string {
+  return `<div class="card">
+<div class="stat-value">${value}</div>
+<div class="stat-label">${label}</div>
+<div style="margin-top:8px;font-size:12px;color:#94a3b8;line-height:1.4">${insight}</div>
 </div>`;
 }
 
@@ -308,10 +439,12 @@ async function renderBlock1(env: Env, days: number): Promise<string> {
     color: COLORS[r.category as string] ?? "#6b7280",
   }));
 
-  // Daily trend → line chart
+  // Daily trend → line chart (exclude today's partial data)
+  const todayStr = new Date().toISOString().slice(0, 10);
   const dayMap = new Map<string, Record<string, number>>();
   for (const r of trendRows) {
     const day = String(r.day).slice(0, 10);
+    if (day === todayStr) continue;
     if (!dayMap.has(day)) dayMap.set(day, {});
     const m = dayMap.get(day)!;
     m[r.category as string] = (m[r.category as string] || 0) + (Number(r.visits) || 0);
@@ -360,8 +493,10 @@ async function renderBlock1(env: Env, days: number): Promise<string> {
 </div>
 <div class="card" style="margin-top:20px">
   <h3>Daily Trend (AI Retrieval + SEO)</h3>
+  <div style="font-size:12px;color:#64748b;margin-bottom:8px">Completed days only — today excluded to avoid partial-day distortion</div>
   ${sortedDays.length > 0 ? svgLineChart(lineSeries, xLabels) : `<div class="empty">No trend data yet — data appears after DNS switch</div>`}
 </div>
+<div class="data-source">Data source: Cloudflare Analytics Engine (third-party) · Each data point = one verified HTTP request to the edge proxy · <a href="/api/stats/${escHtml("virum")}?days=${days}">Export raw JSON</a></div>
 </div>`;
 }
 
@@ -470,16 +605,28 @@ async function renderBlock3(env: Env, client: string): Promise<string> {
 
   const updatedAt = prompts?.updatedAt || citations?.updatedAt || "";
 
-  // ── Stat cards ──
+  // ── Stat cards with interpretation ──
   let statsHtml = `<div class="grid grid-4" style="margin-bottom:20px">`;
   if (prompts) {
-    statsHtml += renderStatCard(`${prompts.brandMentioned}/${prompts.total}`, "Brand Mentioned", "Prompts mentioning brand");
-    statsHtml += renderStatCard(`${prompts.domainCited}/${prompts.total}`, "Domain Cited", "Prompts citing domain");
+    const brandPct = prompts.total > 0 ? (prompts.brandMentioned / prompts.total) * 100 : 0;
+    const brandStatus: "good" | "neutral" | "warn" | "bad" = brandPct >= 30 ? "good" : brandPct >= 10 ? "neutral" : "warn";
+    const brandInsight = `In ${prompts.total} AI searches for your industry, your brand was mentioned ${prompts.brandMentioned} time${prompts.brandMentioned !== 1 ? "s" : ""} (${brandPct.toFixed(0)}%)`;
+    statsHtml += renderInsightCard(`${prompts.brandMentioned}/${prompts.total}`, "Brand Mentioned", brandInsight, brandStatus);
+
+    const domainPct = prompts.total > 0 ? (prompts.domainCited / prompts.total) * 100 : 0;
+    const domainStatus: "good" | "neutral" | "warn" | "bad" = domainPct >= 30 ? "good" : domainPct >= 10 ? "neutral" : "warn";
+    const domainInsight = `Your website was cited as a source in ${domainPct.toFixed(0)}% of relevant AI queries`;
+    statsHtml += renderInsightCard(`${prompts.domainCited}/${prompts.total}`, "Domain Cited", domainInsight, domainStatus);
   }
   if (citations) {
-    statsHtml += renderStatCard(fmt(citations.total), "Total Citations", "All AI citations tracked");
-    const share = citations.total > 0 ? ((citations.myDomainCitations / citations.total) * 100).toFixed(1) : "0";
-    statsHtml += renderStatCard(fmt(citations.myDomainCitations), "My Citations", `${share}% share`);
+    const share = citations.total > 0 ? ((citations.myDomainCitations / citations.total) * 100) : 0;
+    const shareStr = share.toFixed(1);
+    const citInsight = `${citations.total} total citations across all AI engines in your market`;
+    statsHtml += renderInsightCard(fmt(citations.total), "Total Citations", citInsight, "neutral");
+
+    const myStatus: "good" | "neutral" | "warn" | "bad" = share >= 5 ? "good" : share >= 1 ? "neutral" : "warn";
+    const myInsight = `${shareStr}% of all AI citations point to your site — ${share >= 5 ? "strong presence" : share >= 1 ? "growing, room to improve" : "early stage, GEO is building momentum"}`;
+    statsHtml += renderInsightCard(fmt(citations.myDomainCitations), "My Citations", myInsight, myStatus);
   }
   statsHtml += `</div>`;
 
@@ -688,6 +835,211 @@ async function renderBlock5(env: Env, days: number): Promise<string> {
   ${gapTable}
 </div>
 </div>`;
+}
+
+// ── Client View: Layer 1 — Funnel (AI traffic reaching your business) ──
+
+const AI_BOT_COLORS: Record<string, string> = {
+  "ChatGPT-User": "#10b981",
+  "PerplexityBot": "#8b5cf6",
+  "ClaudeBot": "#f59e0b",
+  "OAI-SearchBot": "#3b82f6",
+  "GPTBot": "#6366f1",
+};
+const AI_BOT_DEFAULT_COLOR = "#64748b";
+
+async function renderClientFunnel(env: Env, days: number, config: ClientConfig): Promise<string> {
+  const ds = env.AE_DATASET;
+  const [categoryRows, aiBotRows, totalRows] = await Promise.all([
+    queryAE(env, queryCategoryBreakdown(ds, days)),
+    queryAE(env, queryDailyAIBots(ds, days)),
+    queryAE(env, queryTotalRequests(ds, days)),
+  ]);
+
+  const total = totalRows.length > 0 ? Number(totalRows[0].total) || 0 : 0;
+  const aiTotal = categoryRows
+    .filter((r) => r.category === "ai_retrieval")
+    .reduce((s, r) => s + (Number(r.visits) || 0), 0);
+
+  // Build per-bot daily data (exclude today)
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const dayBotMap = new Map<string, Map<string, number>>();
+  const allBotNames = new Set<string>();
+  for (const r of aiBotRows) {
+    const day = String(r.day).slice(0, 10);
+    if (day === todayStr) continue;
+    const bot = String(r.bot_name);
+    allBotNames.add(bot);
+    if (!dayBotMap.has(day)) dayBotMap.set(day, new Map());
+    const m = dayBotMap.get(day)!;
+    m.set(bot, (m.get(bot) || 0) + (Number(r.visits) || 0));
+  }
+  const sortedDays = [...dayBotMap.keys()].sort();
+  const botNames = [...allBotNames].sort();
+
+  // Find activation date index
+  const activationDate = config.activeSince ? new Date(config.activeSince).toISOString().slice(0, 10) : "";
+  const activationIdx = activationDate ? sortedDays.indexOf(activationDate) : -1;
+
+  const chartDays = sortedDays.map((d) => ({
+    label: d.slice(5),
+    bots: botNames.map((name) => ({
+      name,
+      color: AI_BOT_COLORS[name] || AI_BOT_DEFAULT_COLOR,
+      value: dayBotMap.get(d)?.get(name) || 0,
+    })),
+  }));
+
+  // Per-bot totals for stat cards
+  const botTotals = new Map<string, number>();
+  for (const [, bots] of dayBotMap) {
+    for (const [name, v] of bots) botTotals.set(name, (botTotals.get(name) || 0) + v);
+  }
+  const topBots = [...botTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+
+  const aiInsight = aiTotal > 0
+    ? `In the last ${days} days, AI search engines visited your site ${aiTotal} times to gather information about your business. Each visit means an AI assistant is reading your content to answer real user questions.`
+    : "AI search engines haven't visited yet — your GEO layer is active and ready.";
+
+  return `<div class="section">
+<div class="layer-label">Layer 1 — AI Traffic Funnel</div>
+<div class="insight-banner">
+  <h3>Your Business in AI Search</h3>
+  <p>${aiInsight}</p>
+</div>
+<div class="grid grid-${Math.min(topBots.length, 4)}" style="margin-bottom:20px">
+  ${topBots.map(([name, visits]) =>
+    renderInsightCard(String(visits), name, `Visits from ${name} reading your content`)
+  ).join("")}
+</div>
+<div class="card">
+  <h3>AI Bot Visits Per Day</h3>
+  <div style="font-size:12px;color:#64748b;margin-bottom:8px">Each bar shows which AI assistants visited your site that day</div>
+  ${chartDays.length > 0 ? svgStackedBarChart(chartDays, activationIdx) : `<div class="empty">Data will appear once AI bots start visiting</div>`}
+</div>
+<div class="data-source">Data source: Cloudflare Analytics Engine (third-party infrastructure) · Each data point = one verified HTTP request</div>
+</div>`;
+}
+
+// ── Client View: Layer 2 — Results (AI search visibility) ──
+
+async function renderClientResults(env: Env, client: string): Promise<string> {
+  const [promptsRaw, citationsRaw] = await Promise.all([
+    env.DASHBOARD_KV.get(`otterly_prompts:${client}`, "text"),
+    env.DASHBOARD_KV.get(`otterly_citations:${client}`, "text"),
+  ]);
+
+  if (!promptsRaw && !citationsRaw) {
+    return `<div class="section">
+<div class="layer-label">Layer 2 — AI Search Results</div>
+<div class="card">
+  <div class="empty">
+    <p style="font-size:16px;margin-bottom:8px">AI search visibility data coming soon</p>
+    <p style="font-size:13px;color:#64748b">We measure how often AI assistants recommend your business — first report available shortly.</p>
+  </div>
+</div>
+</div>`;
+  }
+
+  type PromptsStored = OtterlyData["prompts"] & { updatedAt?: string };
+  type CitationsStored = OtterlyData["citations"] & { updatedAt?: string };
+
+  let prompts: PromptsStored | null = null;
+  let citations: CitationsStored | null = null;
+  if (promptsRaw) try { prompts = JSON.parse(promptsRaw); } catch { /* invalid */ }
+  if (citationsRaw) try { citations = JSON.parse(citationsRaw); } catch { /* invalid */ }
+
+  const updatedAt = prompts?.updatedAt || citations?.updatedAt || "";
+
+  // Per-engine breakdown instead of GEO Score
+  let enginesBreakdownHtml = "";
+  if (citations && citations.engines.length > 0) {
+    const topEngines = citations.engines.slice(0, 4);
+    enginesBreakdownHtml = `<div class="grid grid-${Math.min(topEngines.length, 4)}" style="margin-bottom:20px">
+    ${topEngines.map((e) =>
+      renderInsightCard(
+        String(e.myDomainCited),
+        e.name,
+        `${e.citations} total citations in ${e.name} · ${e.myDomainCited > 0 ? `your site cited ${e.myDomainCited} time${e.myDomainCited > 1 ? "s" : ""}` : "not yet cited"}`
+      )
+    ).join("")}
+    </div>`;
+  }
+
+  // Stat cards
+  let statsHtml = `<div class="grid grid-2" style="margin-bottom:20px">`;
+  if (prompts) {
+    statsHtml += renderInsightCard(
+      `${prompts.brandMentioned}/${prompts.total}`,
+      "Brand Mentioned",
+      `When people ask AI about your industry, your brand name appeared in ${prompts.brandMentioned} out of ${prompts.total} answers`
+    );
+
+    const domainPct = prompts.total > 0 ? (prompts.domainCited / prompts.total) * 100 : 0;
+    statsHtml += renderInsightCard(
+      `${prompts.domainCited}/${prompts.total}`,
+      "Website Linked",
+      `AI assistants linked directly to your website in ${domainPct.toFixed(0)}% of relevant conversations`
+    );
+  }
+  statsHtml += `</div>`;
+
+  // Competitors
+  let competitorsHtml = "";
+  if (prompts && prompts.competitors.length > 0) {
+    const topN = prompts.competitors.slice(0, 5);
+    const maxMentions = Math.max(...topN.map(c => c.mentioned + c.cited), 1);
+    competitorsHtml = `<div class="card" style="margin-top:20px">
+  <h3>How You Compare to Competitors</h3>
+  <div style="font-size:12px;color:#64748b;margin-bottom:12px">AI visibility ranking in your market</div>
+  <div class="status-row" style="border-bottom:2px solid #334155">
+    <span style="color:#10b981;font-weight:600">Your Business</span>
+    <span style="display:flex;align-items:center;gap:8px">
+      <span style="width:160px"><div class="bar"><div class="bar-fill" style="width:${prompts ? ((prompts.brandMentioned + prompts.domainCited) / maxMentions) * 100 : 0}%;background:#10b981"></div></div></span>
+      <span style="min-width:80px;text-align:right;color:#10b981">${prompts ? prompts.brandMentioned + prompts.domainCited : 0} mentions</span>
+    </span>
+  </div>
+  ${topN.map((c) => {
+    const total = c.mentioned + c.cited;
+    const pct = (total / maxMentions) * 100;
+    return `<div class="status-row">
+      <span>${escHtml(c.name)}</span>
+      <span style="display:flex;align-items:center;gap:8px">
+        <span style="width:160px"><div class="bar"><div class="bar-fill" style="width:${pct}%;background:#3b82f6"></div></div></span>
+        <span style="min-width:80px;text-align:right">${total} mentions</span>
+      </span>
+    </div>`;
+  }).join("")}
+</div>`;
+  }
+
+  return `<div class="section">
+<div class="layer-label">Layer 2 — AI Search Results</div>
+<div class="insight-banner">
+  <h3>AI Search Visibility</h3>
+  <p>We track how often AI assistants (ChatGPT, Perplexity, Claude, etc.) mention and recommend your business when people search for services you offer.</p>
+</div>
+${enginesBreakdownHtml}
+${statsHtml}
+${competitorsHtml}
+<div class="timestamp" style="margin-top:16px">Last measured: ${escHtml(updatedAt)}</div>
+</div>`;
+}
+
+// ── Client View Header ──
+
+function renderClientHeader(config: ClientConfig, generatedAt: string, days: number): string {
+  return `<div class="header">
+<div>
+  <h1 style="font-size:24px">Your AI Search Performance</h1>
+  <div class="subtitle">${escHtml(config.domain)} — GEO active since ${escHtml(config.activeSince)}</div>
+</div>
+<div class="header-right">
+  <div><span class="live-dot"></span>Live Data</div>
+  <div class="timestamp">Updated: ${escHtml(generatedAt)}</div>
+</div>
+</div>
+${renderTimeNav(days, "client")}`;
 }
 
 // ── Utilities ──
@@ -1036,9 +1388,53 @@ export default {
 
     // Dashboard HTML
     const days = parseInt(url.searchParams.get("days") || "7");
+    const view = url.searchParams.get("view") || "ops";
     const client = "virum";
     const generatedAt = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
 
+    // Load client config (fallback to defaults)
+    let config: ClientConfig = { domain: "virumakupunktur.dk", activeSince: "Jun 19, 2026" };
+    const configRaw = await env.DASHBOARD_KV.get(`config:${client}`, "text");
+    if (configRaw) {
+      try { config = JSON.parse(configRaw) as ClientConfig; } catch { /* use default */ }
+    }
+
+    if (view === "client") {
+      const [funnel, results] = await Promise.all([
+        renderClientFunnel(env, days, config),
+        renderClientResults(env, client),
+      ]);
+
+      const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>AI Search Performance — ${escHtml(config.domain)}</title>
+${renderStyles()}
+</head>
+<body>
+<div class="container">
+${renderClientHeader(config, generatedAt, days)}
+${funnel}
+${results}
+<div style="text-align:center;padding:24px 0;color:#475569;font-size:12px">
+  Powered by GEO Reforge
+</div>
+</div>
+</body>
+</html>`;
+
+      return new Response(html, {
+        headers: {
+          "Content-Type": "text/html;charset=utf-8",
+          "Cache-Control": "public, max-age=300",
+        },
+      });
+    }
+
+    // Ops view: all blocks
     const [block1, block2, block3, block4, block5] = await Promise.all([
       renderBlock1(env, days),
       renderBlock2(env, days),
@@ -1053,19 +1449,19 @@ export default {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>GEO Dashboard — ${escHtml(client)}</title>
+<title>GEO Dashboard — ${escHtml(config.domain)}</title>
 ${renderStyles()}
 </head>
 <body>
 <div class="container">
-${renderHeader(client, generatedAt)}
+${renderHeader(config, generatedAt, days)}
 ${block1}
 ${block2}
 ${block3}
 ${block4}
 ${block5}
 <div style="text-align:center;padding:24px 0;color:#475569;font-size:12px">
-  GEO Reforge Edge Proxy — Dashboard v1.0
+  GEO Reforge Edge Proxy — Dashboard v2.1
 </div>
 </div>
 </body>
