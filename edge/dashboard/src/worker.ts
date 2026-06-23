@@ -392,20 +392,21 @@ function geoToggle(cid,sid){var chart=document.getElementById(cid);if(!chart)ret
 </script>`;
 }
 
-function renderTimeNav(days: number, view: string): string {
+function renderTimeNav(days: number, view: string, client: string = "virum"): string {
   const presets = [
     { d: 7, label: "7D" },
     { d: 14, label: "14D" },
     { d: 30, label: "30D" },
     { d: 90, label: "90D" },
   ];
+  const clientParam = client !== "virum" ? `&client=${encodeURIComponent(client)}` : "";
   const viewParam = view !== "ops" ? `&view=${view}` : "";
   return `<div class="time-nav">${presets.map(p =>
-    `<a href="?days=${p.d}${viewParam}" class="time-pill${p.d === days ? " active" : ""}">${p.label}</a>`
+    `<a href="?days=${p.d}${clientParam}${viewParam}" class="time-pill${p.d === days ? " active" : ""}">${p.label}</a>`
   ).join("")}</div>`;
 }
 
-function renderHeader(config: ClientConfig, generatedAt: string, days: number): string {
+function renderHeader(config: ClientConfig, generatedAt: string, days: number, client: string = "virum"): string {
   return `<div class="header">
 <div>
   <h1>GEO Effect Dashboard</h1>
@@ -416,7 +417,7 @@ function renderHeader(config: ClientConfig, generatedAt: string, days: number): 
   <div class="timestamp">Generated: ${escHtml(generatedAt)}</div>
 </div>
 </div>
-${renderTimeNav(days, "ops")}`;
+${renderTimeNav(days, "ops", client)}`;
 }
 
 function renderStatCard(value: string, label: string, sub?: string): string {
@@ -787,8 +788,8 @@ ${topDomainsHtml}
 
 // ── Block 4: Baseline Comparison ──
 
-async function renderBlock4(env: Env): Promise<string> {
-  const raw = await env.DASHBOARD_KV.get("baseline:virum", "text");
+async function renderBlock4(env: Env, client: string = "virum"): Promise<string> {
+  const raw = await env.DASHBOARD_KV.get(`baseline:${client}`, "text");
 
   const defaultBaseline: BaselineData = {
     capturedAt: "Pre-GEO (baseline)",
@@ -1101,7 +1102,7 @@ ${competitorsHtml}
 
 // ── Client View Header ──
 
-function renderClientHeader(config: ClientConfig, generatedAt: string, days: number): string {
+function renderClientHeader(config: ClientConfig, generatedAt: string, days: number, client: string = "virum"): string {
   return `<div class="header">
 <div>
   <h1 style="font-size:24px">Your AI Search Performance</h1>
@@ -1112,7 +1113,7 @@ function renderClientHeader(config: ClientConfig, generatedAt: string, days: num
   <div class="timestamp">Updated: ${escHtml(generatedAt)}</div>
 </div>
 </div>
-${renderTimeNav(days, "client")}`;
+${renderTimeNav(days, "client", client)}`;
 }
 
 // ── Utilities ──
@@ -1129,27 +1130,54 @@ function fmt(n: number): string {
 
 // ── Auth ──
 
-function checkAuth(request: Request, env: Env): Response | null {
-  const token = env.DASHBOARD_TOKEN;
-  if (!token) return null;
+async function checkAuth(request: Request, env: Env): Promise<Response | null> {
+  const url = new URL(request.url);
+  const view = url.searchParams.get("view") || "ops";
+  const client = url.searchParams.get("client") || "virum";
+  const urlToken = url.searchParams.get("token");
+  const opsToken = env.DASHBOARD_TOKEN;
 
-  const auth = request.headers.get("Authorization");
-  const cookieToken = getCookie(request, "dashboard_token");
-  const urlToken = new URL(request.url).searchParams.get("token");
-
-  if (auth === `Bearer ${token}` || cookieToken === token) {
+  // Ops token: Bearer header or ops cookie → full access
+  const cookieOps = getCookie(request, "dashboard_token");
+  if (opsToken && (request.headers.get("Authorization") === `Bearer ${opsToken}` || cookieOps === opsToken)) {
     return null;
   }
 
-  if (urlToken === token) {
+  // Ops token in URL → set cookie and redirect
+  if (opsToken && urlToken === opsToken) {
     const cleanUrl = new URL(request.url);
     cleanUrl.searchParams.delete("token");
     return new Response(null, {
       status: 302,
       headers: {
         Location: cleanUrl.pathname + cleanUrl.search,
-        "Set-Cookie": `dashboard_token=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000`,
+        "Set-Cookie": `dashboard_token=${opsToken}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000`,
       },
+    });
+  }
+
+  // Client view: check per-client token (magic link)
+  if (view === "client") {
+    const clientToken = await env.DASHBOARD_KV.get(`client_token:${client}`, "text");
+    if (clientToken) {
+      const cookieClient = getCookie(request, `client_token_${client}`);
+      if (cookieClient === clientToken) return null;
+
+      if (urlToken === clientToken) {
+        const cleanUrl = new URL(request.url);
+        cleanUrl.searchParams.delete("token");
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: cleanUrl.pathname + cleanUrl.search,
+            "Set-Cookie": `client_token_${client}=${clientToken}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000`,
+          },
+        });
+      }
+    }
+    return new Response(renderClientLoginPage(), {
+      status: 401,
+      headers: { "Content-Type": "text/html;charset=utf-8" },
     });
   }
 
@@ -1157,6 +1185,19 @@ function checkAuth(request: Request, env: Env): Response | null {
     status: 401,
     headers: { "Content-Type": "text/html;charset=utf-8" },
   });
+}
+
+function renderClientLoginPage(): string {
+  return `<!DOCTYPE html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Found by AI</title>
+${renderStyles()}
+</head><body>
+<div class="container" style="max-width:400px;margin-top:15vh">
+<div class="card" style="text-align:center">
+<h2 style="border:none;margin-bottom:16px">Found by AI</h2>
+<p style="color:#94a3b8;margin-bottom:8px">Dit adgangslink er udløbet eller ugyldigt.</p>
+<p style="font-size:13px;color:#64748b">Kontakt os på <a href="mailto:hello@foundbyai.dk" style="color:#3b82f6">hello@foundbyai.dk</a> for et nyt link.</p>
+</div>
+</div></body></html>`;
 }
 
 function getCookie(request: Request, name: string): string | null {
@@ -1415,7 +1456,7 @@ export default {
 
     // Auth check (skip for health endpoint)
     if (path !== "/health") {
-      const authResponse = checkAuth(request, env);
+      const authResponse = await checkAuth(request, env);
       if (authResponse) return authResponse;
     }
 
@@ -1463,10 +1504,40 @@ export default {
       });
     }
 
+    // API: DNS readiness check
+    if (path.match(/^\/api\/dns-check\/[^/]+$/) && request.method === "GET") {
+      const clientId = path.split("/")[3];
+      const cfgRaw = await env.DASHBOARD_KV.get(`config:${clientId}`, "text");
+      const cfg: ClientConfig = cfgRaw
+        ? (() => { try { return JSON.parse(cfgRaw) as ClientConfig; } catch { return { domain: `${clientId}.dk`, activeSince: "" }; } })()
+        : { domain: `${clientId}.dk`, activeSince: "" };
+      try {
+        const resp = await fetch(`https://${cfg.domain}/`, {
+          headers: { "User-Agent": "FoundByAI-DNSCheck/1.0", "X-GEO-Check": "true" },
+          redirect: "follow",
+          signal: AbortSignal.timeout(8000),
+        });
+        const geoActive = resp.headers.get("X-GEO-Layer") === "active";
+        const dnsReady = resp.ok;
+        const existing = await env.DASHBOARD_KV.get(`dns_ready_at:${clientId}`, "text");
+        if (dnsReady && !existing) {
+          await env.DASHBOARD_KV.put(`dns_ready_at:${clientId}`, new Date().toISOString());
+        }
+        const dnsReadyAt = await env.DASHBOARD_KV.get(`dns_ready_at:${clientId}`, "text");
+        return new Response(JSON.stringify({ ok: true, domain: cfg.domain, httpStatus: resp.status, geoActive, dnsReady, dnsReadyAt: dnsReadyAt || null }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ ok: false, domain: cfg.domain, error: String(e), dnsReady: false }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // API: Audit CSV export
     if (path === "/api/export/ai-bot-visits.csv") {
       const days = parseInt(url.searchParams.get("days") || "7");
-      const clientId = "virum";
+      const clientId = url.searchParams.get("client") || "virum";
       const csvConfigRaw = await env.DASHBOARD_KV.get(`config:${clientId}`, "text");
       const csvConfig: ClientConfig = csvConfigRaw
         ? (() => { try { return JSON.parse(csvConfigRaw) as ClientConfig; } catch { return { domain: "virumakupunktur.dk", activeSince: "" }; } })()
@@ -1513,7 +1584,7 @@ export default {
     // Dashboard HTML
     const days = parseInt(url.searchParams.get("days") || "7");
     const view = url.searchParams.get("view") || "ops";
-    const client = "virum";
+    const client = url.searchParams.get("client") || "virum";
     const generatedAt = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
 
     // Load client config (fallback to defaults)
@@ -1540,7 +1611,7 @@ ${renderStyles()}
 </head>
 <body>
 <div class="container">
-${renderClientHeader(config, generatedAt, days)}
+${renderClientHeader(config, generatedAt, days, client)}
 ${funnel}
 ${results}
 <div style="text-align:center;padding:24px 0;color:#475569;font-size:12px">
@@ -1563,7 +1634,7 @@ ${results}
       renderBlock1(env, days, config),
       renderBlock2(env, days),
       renderBlock3(env, client),
-      renderBlock4(env),
+      renderBlock4(env, client),
       renderBlock5(env, days),
     ]);
 
@@ -1578,7 +1649,7 @@ ${renderStyles()}
 </head>
 <body>
 <div class="container">
-${renderHeader(config, generatedAt, days)}
+${renderHeader(config, generatedAt, days, client)}
 ${block1}
 ${block2}
 ${block3}

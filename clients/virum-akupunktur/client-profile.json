@@ -1,0 +1,33 @@
+{
+  "id": "virum",
+  "name": "Virum Akupunktur",
+  "domain": "virumakupunktur.dk",
+  "address": {
+    "street": "Dalstrøget 78, 4",
+    "zip": "2870",
+    "city": "Dyssegård",
+    "country": "DK"
+  },
+  "phone": "+45 25 72 42 65",
+  "email": "jie.luan@outlook.com",
+  "industry": "akupunktur",
+  "hours": [
+    { "dayOfWeek": "Monday",    "opens": "09:00", "closes": "17:00" },
+    { "dayOfWeek": "Tuesday",   "opens": "09:00", "closes": "17:00" },
+    { "dayOfWeek": "Wednesday", "opens": "09:00", "closes": "17:00" },
+    { "dayOfWeek": "Thursday",  "opens": "09:00", "closes": "17:00" },
+    { "dayOfWeek": "Friday",    "opens": "09:00", "closes": "15:00" }
+  ],
+  "services": [
+    "Akupunktur",
+    "Smertebehandling",
+    "Rygestop",
+    "Overgangsalder",
+    "Eksem",
+    "Fedme og overvægt",
+    "Fordøjelsesproblemer",
+    "Hormonelle ubalancer",
+    "Hovedpine og migræne",
+    "Kosmetisk akupunktur"
+  ]
+}
