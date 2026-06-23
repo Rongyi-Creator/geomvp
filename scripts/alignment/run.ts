@@ -1,0 +1,117 @@
+#!/usr/bin/env tsx
+/**
+ * CLI entry point for alignment check.
+ * Usage: pnpm tsx scripts/alignment/run.ts [clientId] [--force] [--no-email] [--run-type=day1|day4|biweekly|manual]
+ */
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import { runAlignmentCheck } from './check-all.js';
+import { compareNap } from './compare-nap.js';
+import { calcScore } from './scoring.js';
+import { generateReport } from './generate-report.js';
+import { updateGeoLayer } from './update-geo-layer.js';
+import { sendNotificationEmail } from './send-email.js';
+import type { ClientProfile, AlignmentReport, ScoreHistory } from './types.js';
+
+const clientId = process.argv[2] ?? 'virum';
+const force     = process.argv.includes('--force');
+const noEmail   = process.argv.includes('--no-email');
+const runTypeArg = process.argv.find(a => a.startsWith('--run-type='))?.split('=')[1];
+
+const CLIENT_DIR_MAP: Record<string, string> = { virum: 'virum-akupunktur' };
+
+function loadClientProfile(id: string): ClientProfile {
+  const dir  = CLIENT_DIR_MAP[id] ?? id;
+  const path = resolve(process.cwd(), `clients/${dir}/client-profile.json`);
+  return JSON.parse(readFileSync(path, 'utf8')) as ClientProfile;
+}
+
+async function postToDashboard(report: AlignmentReport): Promise<void> {
+  const workerUrl  = process.env.DASHBOARD_WORKER_URL;
+  const opsToken   = process.env.DASHBOARD_TOKEN;
+  if (!workerUrl || !opsToken) { console.warn('[alignment] DASHBOARD_WORKER_URL or DASHBOARD_TOKEN not set — skipping KV push'); return; }
+
+  const resp = await fetch(`${workerUrl}/api/alignment/${report.clientId}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${opsToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(report),
+  });
+  if (!resp.ok) throw new Error(`Dashboard POST failed: ${resp.status} ${await resp.text()}`);
+  console.log(`[alignment] Report pushed to Dashboard (score=${report.score.total}, grade=${report.score.grade.grade})`);
+}
+
+function determineRunType(history: ScoreHistory | null): AlignmentReport['runType'] {
+  if (runTypeArg) return runTypeArg as AlignmentReport['runType'];
+  if (!history || history.history.length === 0) return 'day1';
+  const lastDate   = new Date(history.history.at(-1)!.date);
+  const daysSince  = (Date.now() - lastDate.getTime()) / 86400000;
+  if (daysSince < 3) return 'day4';
+  return 'biweekly';
+}
+
+async function fetchHistory(workerUrl: string, opsToken: string, id: string): Promise<ScoreHistory | null> {
+  try {
+    const resp = await fetch(`${workerUrl}/api/alignment/${id}`, { headers: { Authorization: `Bearer ${opsToken}` } });
+    if (!resp.ok) return null;
+    const data = await resp.json() as { history?: ScoreHistory };
+    return data.history ?? null;
+  } catch { return null; }
+}
+
+async function main() {
+  console.log(`[alignment] Starting check for client: ${clientId}`);
+  const client = loadClientProfile(clientId);
+
+  const workerUrl = process.env.DASHBOARD_WORKER_URL ?? '';
+  const opsToken  = process.env.DASHBOARD_TOKEN ?? '';
+  const history   = workerUrl && opsToken ? await fetchHistory(workerUrl, opsToken, clientId) : null;
+
+  if (!force && history) {
+    const lastDate  = new Date(history.history.at(-1)?.date ?? 0);
+    const daysSince = (Date.now() - lastDate.getTime()) / 86400000;
+    if (daysSince < 1) {
+      console.log(`[alignment] Skipping — last check was ${daysSince.toFixed(1)} days ago (use --force to override)`);
+      process.exit(0);
+    }
+  }
+
+  const runType    = determineRunType(history);
+  console.log(`[alignment] Run type: ${runType}`);
+
+  // Step 1: detect platforms
+  const checkResult = await runAlignmentCheck(client);
+
+  // Step 2: NAP comparison via Claude
+  const comparisons = await compareNap(client, checkResult);
+  console.log(`[alignment] NAP comparisons: ${comparisons.length} fields checked`);
+
+  // Step 3: score
+  const score = calcScore(checkResult, comparisons);
+  console.log(`[alignment] Score: ${score.total}/100 (${score.grade.grade})`);
+
+  // Step 4: generate report
+  const report = generateReport(checkResult, comparisons, score, runType);
+
+  // Step 5: update sameAs in business.json
+  updateGeoLayer(clientId, report);
+
+  // Step 6: push to Dashboard KV
+  await postToDashboard(report);
+
+  // Step 7: send notification email (skipped with --no-email)
+  if (!noEmail && client.email) {
+    // ponytail: email delay handled externally via GitHub Actions wait step
+    await sendNotificationEmail(report, client.email);
+  } else if (noEmail) {
+    console.log('[alignment] Email skipped (--no-email flag)');
+  }
+
+  // Output score for GitHub Actions step summary
+  if (process.env.GITHUB_OUTPUT) {
+    const { appendFileSync } = await import('fs');
+    appendFileSync(process.env.GITHUB_OUTPUT, `score=${score.total}\ngrade=${score.grade.grade}\n`);
+  }
+  console.log(`[alignment] Done ✅`);
+}
+
+main().catch(e => { console.error('[alignment] Fatal error:', e); process.exit(1); });
