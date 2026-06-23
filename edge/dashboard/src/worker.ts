@@ -1442,6 +1442,158 @@ async function handleTrafficEvent(request: Request, env: Env): Promise<Response>
   });
 }
 
+// ── Block 6 / Layer 3: Platform Alignment ──
+
+interface AlignmentScoreGrade { score: number; grade: string; label_da: string; color: string; }
+interface AlignmentScore { total: number; grade: AlignmentScoreGrade; breakdown: { coverage: number; consistency: number; signals: number; }; }
+interface AlignmentPlatform { id: string; name_da: string; icon: string; status: string; statusText_da: string; issues: string[]; actionUrl: string | null; actionText_da: string | null; }
+interface AlignmentAction { priority: number; action_da: string; timeEstimate_da: string; impactText_da: string; url: string; }
+interface AlignmentReport { clientId: string; generatedAt: string; runType: string; client: { name: string; domain: string }; score: AlignmentScore; platforms: AlignmentPlatform[]; inconsistencies: { platform: string; field: string; match: string; diffDescription: string; }[]; prioritizedActions: AlignmentAction[]; sameAsUpdated: string[]; }
+interface ScoreHistoryEntry { date: string; total: number; coverage: number; consistency: number; signals: number; }
+interface ScoreHistory { clientId: string; history: ScoreHistoryEntry[]; }
+
+async function loadAlignmentReport(env: Env, client: string): Promise<AlignmentReport | null> {
+  const raw = await env.DASHBOARD_KV.get(`alignment:${client}:latest`, "text");
+  if (!raw) return null;
+  try { return JSON.parse(raw) as AlignmentReport; } catch { return null; }
+}
+
+async function loadScoreHistory(env: Env, client: string): Promise<ScoreHistory | null> {
+  const raw = await env.DASHBOARD_KV.get(`alignment:${client}:history`, "text");
+  if (!raw) return null;
+  try { return JSON.parse(raw) as ScoreHistory; } catch { return null; }
+}
+
+function renderGeoHealthScoreCard(report: AlignmentReport | null): string {
+  if (!report) {
+    return `<div class="card" style="text-align:center;padding:20px 24px;margin-bottom:24px">
+  <div style="font-size:14px;color:#64748b">GEO Health Score — checking platforms soon</div>
+</div>`;
+  }
+  const { total, grade, breakdown } = report.score;
+  const coveragePct  = (breakdown.coverage / 40) * 100;
+  const consistPct   = (breakdown.consistency / 40) * 100;
+  const signalsPct   = (breakdown.signals / 20) * 100;
+  return `<div class="card" style="display:flex;align-items:center;gap:32px;padding:20px 28px;margin-bottom:24px;flex-wrap:wrap">
+  <div style="text-align:center;min-width:80px">
+    <div style="font-size:56px;font-weight:900;color:${escHtml(grade.color)};line-height:1">${escHtml(String(grade.grade))}</div>
+    <div style="font-size:22px;font-weight:700;color:#f8fafc">${total}</div>
+    <div style="font-size:12px;color:#94a3b8">${escHtml(grade.label_da)}</div>
+  </div>
+  <div style="flex:1;min-width:200px">
+    <div style="font-size:13px;font-weight:600;color:#cbd5e1;margin-bottom:10px">GEO Health Score</div>
+    <div style="margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:3px"><span>Platformdækning</span><span>${breakdown.coverage}/40</span></div>
+      <div style="background:#1e293b;border-radius:4px;height:6px"><div style="background:#3b82f6;border-radius:4px;height:6px;width:${coveragePct.toFixed(0)}%"></div></div>
+    </div>
+    <div style="margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:3px"><span>NAP-konsistens</span><span>${breakdown.consistency}/40</span></div>
+      <div style="background:#1e293b;border-radius:4px;height:6px"><div style="background:#8b5cf6;border-radius:4px;height:6px;width:${consistPct.toFixed(0)}%"></div></div>
+    </div>
+    <div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:3px"><span>Signalkvalitet</span><span>${breakdown.signals}/20</span></div>
+      <div style="background:#1e293b;border-radius:4px;height:6px"><div style="background:#f59e0b;border-radius:4px;height:6px;width:${signalsPct.toFixed(0)}%"></div></div>
+    </div>
+  </div>
+  <div style="font-size:11px;color:#475569;align-self:flex-end">${escHtml(report.runType)} · ${escHtml(report.generatedAt.slice(0, 10))}</div>
+</div>`;
+}
+
+function renderBlock6(report: AlignmentReport | null, history: ScoreHistory | null): string {
+  if (!report) {
+    return `<div class="section"><h2>6. Platform Alignment</h2><div class="card"><div class="empty">No alignment data yet — run <code>pnpm tsx scripts/alignment/run.ts virum</code> to check</div></div></div>`;
+  }
+
+  const statusColor: Record<string, string> = { ok: '#10b981', warning: '#f59e0b', missing: '#ef4444', error: '#ef4444', unable_to_check: '#64748b' };
+
+  const platformRows = report.platforms.map(p => {
+    const color = statusColor[p.status] ?? '#64748b';
+    const issueHtml = p.issues.length ? `<ul style="margin:4px 0 0 16px;font-size:12px;color:#f59e0b">${p.issues.map(i => `<li>${escHtml(i)}</li>`).join('')}</ul>` : '';
+    const actionHtml = p.actionUrl ? `<a href="${escHtml(p.actionUrl)}" style="font-size:12px;color:#3b82f6;white-space:nowrap">${escHtml(p.actionText_da ?? 'Open →')}</a>` : '';
+    return `<tr>
+      <td style="font-size:18px;width:36px">${escHtml(p.icon)}</td>
+      <td style="font-weight:500">${escHtml(p.name_da)}</td>
+      <td><span style="color:${color};font-size:13px">${escHtml(p.statusText_da)}</span>${issueHtml}</td>
+      <td style="text-align:right">${actionHtml}</td>
+    </tr>`;
+  }).join('');
+
+  const napRows = report.inconsistencies.filter(c => c.match === 'major_diff' || c.match === 'minor_diff').map(c =>
+    `<tr><td>${escHtml(c.field)}</td><td>${escHtml(c.platform)}</td><td style="color:#ea580c;font-size:13px">${escHtml(c.diffDescription)}</td></tr>`
+  ).join('');
+
+  const actionRows = report.prioritizedActions.slice(0, 5).map(a =>
+    `<tr><td><span class="badge badge-blue">${a.priority}</span></td><td>${escHtml(a.action_da)}</td><td style="color:#64748b;font-size:12px">${escHtml(a.timeEstimate_da)}</td><td style="font-size:12px;color:#94a3b8">${escHtml(a.impactText_da)}</td></tr>`
+  ).join('');
+
+  // History trend
+  let historyHtml = '';
+  if (history && history.history.length > 1) {
+    const pts = history.history.slice(-10);
+    const xLabels = pts.map(p => p.date.slice(5));
+    const series = [{ label: 'Total', color: '#3b82f6', points: pts.map((p, i) => ({ x: i, y: p.total })) }];
+    historyHtml = `<div class="card" style="margin-top:20px"><h3>Score History</h3>${svgLineChart(series, xLabels, 600, 180)}</div>`;
+  }
+
+  const sameAsHtml = report.sameAsUpdated.length
+    ? `<div style="margin-top:12px;font-size:12px;color:#64748b">sameAs synced: ${report.sameAsUpdated.map(u => `<a href="${escHtml(u)}" style="color:#475569">${escHtml(new URL(u).hostname)}</a>`).join(' · ')}</div>`
+    : '';
+
+  return `<div class="section">
+<h2>6. Platform Alignment</h2>
+<div class="card" style="margin-bottom:20px">
+  <table><thead><tr><th></th><th>Platform</th><th>Status</th><th></th></tr></thead><tbody>${platformRows}</tbody></table>
+</div>
+${napRows ? `<div class="card" style="margin-bottom:20px"><h3>NAP Inconsistencies</h3><table><thead><tr><th>Field</th><th>Platform</th><th>Problem (DA)</th></tr></thead><tbody>${napRows}</tbody></table></div>` : ''}
+${actionRows ? `<div class="card" style="margin-bottom:20px"><h3>Prioritized Actions</h3><table><thead><tr><th>#</th><th>Action</th><th>Time</th><th>Impact</th></tr></thead><tbody>${actionRows}</tbody></table></div>` : ''}
+${historyHtml}${sameAsHtml}
+</div>`;
+}
+
+function renderClientLayer3(report: AlignmentReport | null, dnsReadyAt: string | null): string {
+  const dnsStatus = dnsReadyAt
+    ? `<div style="font-size:13px;color:#10b981;margin-bottom:16px">✅ GEO Layer aktiv siden ${escHtml(dnsReadyAt.slice(0, 10))}</div>`
+    : `<div style="font-size:13px;color:#94a3b8;margin-bottom:16px">⏳ Afventer DNS-opsætning (typisk 24-48t)</div>`;
+
+  if (!report) {
+    return `<div class="section">
+<div class="layer-label">Layer 3 — Platformtilpasning</div>
+${dnsStatus}
+<div class="card"><div class="empty"><p style="font-size:15px;margin-bottom:6px">Din første alignment-rapport er på vej</p><p style="font-size:13px;color:#64748b">Vi tjekker dine platforme inden for 24 timer efter aktivering.</p></div></div>
+</div>`;
+  }
+
+  const { total, grade } = report.score;
+  const statusIcon: Record<string, string> = { ok: '✅', warning: '⚠️', missing: '❌', unable_to_check: '—', error: '⚠️' };
+
+  const platformList = report.platforms.map(p =>
+    `<div class="status-row"><span>${escHtml(p.icon)} ${escHtml(p.name_da)}</span><span style="font-size:13px;color:${p.status === 'ok' ? '#10b981' : p.status === 'missing' ? '#ef4444' : '#f59e0b'}">${statusIcon[p.status] ?? '—'} ${escHtml(p.statusText_da)}</span></div>`
+  ).join('');
+
+  const topActions = report.prioritizedActions.slice(0, 3).map((a, i) =>
+    `<div style="background:#0f172a;border-radius:8px;padding:14px 16px;margin-bottom:8px">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
+        <span style="background:#3b82f6;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">${i + 1}</span>
+        <span style="font-size:14px;font-weight:600;color:#f8fafc">${escHtml(a.action_da)}</span>
+      </div>
+      <div style="font-size:12px;color:#64748b;padding-left:32px">${escHtml(a.timeEstimate_da)} · ${escHtml(a.impactText_da)}</div>
+      ${a.url ? `<div style="padding-left:32px;margin-top:4px"><a href="${escHtml(a.url)}" style="font-size:12px;color:#3b82f6">Gå til platform →</a></div>` : ''}
+    </div>`
+  ).join('');
+
+  return `<div class="section">
+<div class="layer-label">Layer 3 — Platformtilpasning</div>
+${dnsStatus}
+<div class="insight-banner">
+  <h3 style="color:${escHtml(grade.color)}">${escHtml(String(grade.grade))} — ${total}/100 · ${escHtml(grade.label_da)}</h3>
+  <p>Vi har tjekket dine oplysninger på ${report.platforms.length} platforme. Herunder ser du status og hvad du kan gøre for at forbedre din AI-synlighed.</p>
+</div>
+<div class="card" style="margin-bottom:20px"><h3>Platformstatus</h3>${platformList}</div>
+${topActions ? `<h2 style="font-size:16px;color:#f8fafc;margin:0 0 12px">Anbefalede handlinger</h2>${topActions}` : ''}
+<div style="font-size:11px;color:#475569;margin-top:12px">Rapport genereret ${escHtml(report.generatedAt.slice(0, 10))} · Næste check om 2 uger</div>
+</div>`;
+}
+
 // ── Main Worker ──
 
 export default {
@@ -1463,6 +1615,37 @@ export default {
     // Health check
     if (path === "/health") {
       return new Response("ok");
+    }
+
+    // API: Receive alignment report from script
+    if (path.match(/^\/api\/alignment\/[^/]+$/) && request.method === "POST") {
+      const clientId = path.split("/")[3];
+      const body = await request.text();
+      if (!body) return new Response(JSON.stringify({ error: "Empty body" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      try {
+        const report = JSON.parse(body) as AlignmentReport;
+        await env.DASHBOARD_KV.put(`alignment:${clientId}:latest`, body);
+        // Append to history
+        const histRaw = await env.DASHBOARD_KV.get(`alignment:${clientId}:history`, "text");
+        const hist: ScoreHistory = histRaw ? JSON.parse(histRaw) : { clientId, history: [] };
+        hist.history.push({ date: report.generatedAt.slice(0, 10), total: report.score.total, coverage: report.score.breakdown.coverage, consistency: report.score.breakdown.consistency, signals: report.score.breakdown.signals });
+        if (hist.history.length > 50) hist.history = hist.history.slice(-50);
+        await env.DASHBOARD_KV.put(`alignment:${clientId}:history`, JSON.stringify(hist));
+        return new Response(JSON.stringify({ ok: true, score: report.score.total, grade: report.score.grade.grade }), { headers: { "Content-Type": "application/json" } });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: "Invalid JSON", detail: String(e) }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+    }
+
+    // API: Get latest alignment report
+    if (path.match(/^\/api\/alignment\/[^/]+$/) && request.method === "GET") {
+      const clientId = path.split("/")[3];
+      const [reportRaw, histRaw] = await Promise.all([
+        env.DASHBOARD_KV.get(`alignment:${clientId}:latest`, "text"),
+        env.DASHBOARD_KV.get(`alignment:${clientId}:history`, "text"),
+      ]);
+      if (!reportRaw) return new Response(JSON.stringify({ error: "No alignment data" }), { status: 404, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ report: JSON.parse(reportRaw), history: histRaw ? JSON.parse(histRaw) : null }), { headers: { "Content-Type": "application/json" } });
     }
 
     // API: Upload OtterlyAI prompts CSV
@@ -1595,9 +1778,11 @@ export default {
     }
 
     if (view === "client") {
-      const [funnel, results] = await Promise.all([
+      const [funnel, results, alignReport, dnsReadyAt] = await Promise.all([
         renderClientFunnel(env, days, config),
         renderClientResults(env, client),
+        loadAlignmentReport(env, client),
+        env.DASHBOARD_KV.get(`dns_ready_at:${client}`, "text"),
       ]);
 
       const html = `<!DOCTYPE html>
@@ -1612,8 +1797,10 @@ ${renderStyles()}
 <body>
 <div class="container">
 ${renderClientHeader(config, generatedAt, days, client)}
+${renderGeoHealthScoreCard(alignReport)}
 ${funnel}
 ${results}
+${renderClientLayer3(alignReport, dnsReadyAt)}
 <div style="text-align:center;padding:24px 0;color:#475569;font-size:12px">
   Powered by GEO Reforge
 </div>
@@ -1630,12 +1817,14 @@ ${results}
     }
 
     // Ops view: all blocks
-    const [block1, block2, block3, block4, block5] = await Promise.all([
+    const [block1, block2, block3, block4, block5, alignReportOps, alignHistoryOps] = await Promise.all([
       renderBlock1(env, days, config),
       renderBlock2(env, days),
       renderBlock3(env, client),
       renderBlock4(env, client),
       renderBlock5(env, days),
+      loadAlignmentReport(env, client),
+      loadScoreHistory(env, client),
     ]);
 
     const html = `<!DOCTYPE html>
@@ -1650,11 +1839,13 @@ ${renderStyles()}
 <body>
 <div class="container">
 ${renderHeader(config, generatedAt, days, client)}
+${renderGeoHealthScoreCard(alignReportOps)}
 ${block1}
 ${block2}
 ${block3}
 ${block4}
 ${block5}
+${renderBlock6(alignReportOps, alignHistoryOps)}
 <div style="text-align:center;padding:24px 0;color:#475569;font-size:12px">
   GEO Reforge Edge Proxy — Dashboard v2.1
 </div>
