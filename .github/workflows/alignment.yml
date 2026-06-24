@@ -68,33 +68,8 @@ jobs:
             -H 'Content-Type: application/json' \
             -d "{\"text\":\"${TEXT}\"}"
 
-  send-email:
-    name: Send client email (3h delay)
-    needs: alignment
-    if: needs.alignment.result == 'success'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Wait 3 hours
-        run: sleep 10800
-
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Send notification email
-        env:
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          DASHBOARD_WORKER_URL: ${{ secrets.DASHBOARD_WORKER_URL }}
-          DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
-        run: |
-          pnpm tsx scripts/alignment/run.ts ${{ inputs.client || 'virum' }} --force
+  # send-email job disabled during internal testing — re-enable when ready for client emails
+  # send-email:
+  #   name: Send client email (3h delay)
+  #   needs: alignment
+  #   if: needs.alignment.result == 'success'
