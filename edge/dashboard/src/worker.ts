@@ -1454,7 +1454,7 @@ async function handleTrafficEvent(request: Request, env: Env): Promise<Response>
 // ── Block 6 / Layer 3: Platform Alignment ──
 
 interface AlignmentScoreGrade { score: number; grade: string; label_da: string; color: string; }
-interface AlignmentScore { total: number; grade: AlignmentScoreGrade; breakdown: { coverage: number; consistency: number; signals: number; }; }
+interface AlignmentScore { total: number; coverage: number; consistency: number; signals: number; grade: AlignmentScoreGrade; }
 interface AlignmentPlatform { id: string; name_da: string; icon: string; status: string; statusText_da: string; issues: string[]; actionUrl: string | null; actionText_da: string | null; }
 interface AlignmentAction { priority: number; action_da: string; timeEstimate_da: string; impactText_da: string; url: string; }
 interface AlignmentReport { clientId: string; generatedAt: string; runType: string; client: { name: string; domain: string }; score: AlignmentScore; platforms: AlignmentPlatform[]; inconsistencies: { platform: string; field: string; match: string; diffDescription: string; }[]; prioritizedActions: AlignmentAction[]; sameAsUpdated: string[]; }
@@ -1479,10 +1479,10 @@ function renderGeoHealthScoreCard(report: AlignmentReport | null): string {
   <div style="font-size:14px;color:#64748b">GEO Health Score — checking platforms soon</div>
 </div>`;
   }
-  const { total, grade, breakdown } = report.score;
-  const coveragePct  = (breakdown.coverage / 40) * 100;
-  const consistPct   = (breakdown.consistency / 40) * 100;
-  const signalsPct   = (breakdown.signals / 20) * 100;
+  const { total, grade, coverage, consistency, signals } = report.score;
+  const coveragePct  = (coverage / 40) * 100;
+  const consistPct   = (consistency / 40) * 100;
+  const signalsPct   = (signals / 20) * 100;
   return `<div class="card" style="display:flex;align-items:center;gap:32px;padding:20px 28px;margin-bottom:24px;flex-wrap:wrap">
   <div style="text-align:center;min-width:80px">
     <div style="font-size:56px;font-weight:900;color:${escHtml(grade.color)};line-height:1">${escHtml(String(grade.grade))}</div>
@@ -1492,15 +1492,15 @@ function renderGeoHealthScoreCard(report: AlignmentReport | null): string {
   <div style="flex:1;min-width:200px">
     <div style="font-size:13px;font-weight:600;color:#cbd5e1;margin-bottom:10px">GEO Health Score</div>
     <div style="margin-bottom:6px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:3px"><span>Platformdækning</span><span>${breakdown.coverage}/40</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:3px"><span>Platformdækning</span><span>${coverage}/40</span></div>
       <div style="background:#1e293b;border-radius:4px;height:6px"><div style="background:#3b82f6;border-radius:4px;height:6px;width:${coveragePct.toFixed(0)}%"></div></div>
     </div>
     <div style="margin-bottom:6px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:3px"><span>NAP-konsistens</span><span>${breakdown.consistency}/40</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:3px"><span>NAP-konsistens</span><span>${consistency}/40</span></div>
       <div style="background:#1e293b;border-radius:4px;height:6px"><div style="background:#8b5cf6;border-radius:4px;height:6px;width:${consistPct.toFixed(0)}%"></div></div>
     </div>
     <div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:3px"><span>Signalkvalitet</span><span>${breakdown.signals}/20</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:3px"><span>Signalkvalitet</span><span>${signals}/20</span></div>
       <div style="background:#1e293b;border-radius:4px;height:6px"><div style="background:#f59e0b;border-radius:4px;height:6px;width:${signalsPct.toFixed(0)}%"></div></div>
     </div>
   </div>
@@ -1702,7 +1702,7 @@ export default {
         const hist: ScoreHistory = histRaw ? JSON.parse(histRaw) : { clientId, history: [] };
         const today = report.generatedAt.slice(0, 10);
         hist.history = hist.history.filter(h => h.date !== today);
-        hist.history.push({ date: today, total: report.score.total, coverage: report.score.breakdown.coverage, consistency: report.score.breakdown.consistency, signals: report.score.breakdown.signals });
+        hist.history.push({ date: today, total: report.score.total, coverage: report.score.coverage, consistency: report.score.consistency, signals: report.score.signals });
         if (hist.history.length > 50) hist.history = hist.history.slice(-50);
         await env.DASHBOARD_KV.put(`alignment:${clientId}:history`, JSON.stringify(hist));
         return new Response(JSON.stringify({ ok: true, score: report.score.total, grade: report.score.grade.grade }), { headers: { "Content-Type": "application/json" } });
