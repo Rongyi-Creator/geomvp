@@ -5,6 +5,8 @@ interface Env {
   DASHBOARD_TOKEN: string;
   DASHBOARD_KV: KVNamespace;
   GEO_TRAFFIC: AnalyticsEngineDataset;
+  SLACK_WEBHOOK_URL?: string;
+  RESEND_API_KEY?: string;
 }
 
 // ── Types ──
@@ -1594,10 +1596,64 @@ ${topActions ? `<h2 style="font-size:16px;color:#f8fafc;margin:0 0 12px">Anbefal
 </div>`;
 }
 
+// ── Notification Helpers ──
+
+async function notifySlack(env: Env, text: string): Promise<void> {
+  if (!env.SLACK_WEBHOOK_URL) return;
+  await fetch(env.SLACK_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  }).catch(() => {}); // ponytail: fire-and-forget, slack outage must not affect dns-check response
+}
+
+async function sendWelcomeEmail(env: Env, clientId: string, requestOrigin: string): Promise<void> {
+  if (!env.RESEND_API_KEY) return;
+  const [clientEmail, clientToken] = await Promise.all([
+    env.DASHBOARD_KV.get(`client_email:${clientId}`, 'text'),
+    env.DASHBOARD_KV.get(`client_token:${clientId}`, 'text'),
+  ]);
+  if (!clientEmail) return;
+
+  const dashUrl = clientToken
+    ? `${requestOrigin}/?view=client&client=${clientId}&token=${clientToken}`
+    : `${requestOrigin}/?view=client&client=${clientId}`;
+
+  const html = `<!DOCTYPE html><html lang="da"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f9f9f9;font-family:system-ui,-apple-system,sans-serif">
+<div style="max-width:520px;margin:0 auto;padding:32px 16px">
+  <p style="color:#6b7280;font-size:12px;margin:0 0 24px">Found by AI</p>
+  <h1 style="color:#1a1a1a;font-size:22px;margin:0 0 12px">Dit GEO-lag er nu aktivt 🎉</h1>
+  <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 28px">
+    Din hjemmeside er nu synlig for AI-søgemaskiner som ChatGPT, Perplexity og Google AI Overview.
+    Vi kører din første platformtjek inden for 24 timer og sender dig en rapport.
+  </p>
+  <div style="text-align:center;margin:32px 0">
+    <a href="${dashUrl}" style="background:#3b82f6;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:600;display:inline-block">
+      Se dit dashboard →
+    </a>
+  </div>
+  <p style="font-size:13px;color:#6b7280;line-height:1.6">
+    Spørgsmål? Skriv til <a href="mailto:hello@foundbyai.dk" style="color:#3b82f6">hello@foundbyai.dk</a>
+  </p>
+</div></body></html>`;
+
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: 'Found by AI <hej@foundbyai.dk>',
+      to: [clientEmail],
+      subject: 'Dit GEO-lag er nu aktivt — se dit dashboard',
+      html,
+    }),
+  }).catch(() => {}); // ponytail: fire-and-forget
+}
+
 // ── Main Worker ──
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -1705,6 +1761,11 @@ export default {
         const existing = await env.DASHBOARD_KV.get(`dns_ready_at:${clientId}`, "text");
         if (dnsReady && !existing) {
           await env.DASHBOARD_KV.put(`dns_ready_at:${clientId}`, new Date().toISOString());
+          const origin = new URL(request.url).origin;
+          ctx.waitUntil(Promise.all([
+            notifySlack(env, `🌐 DNS ready: *${clientId}* (${cfg.domain}) — <${origin}/?view=ops|Dashboard>`),
+            sendWelcomeEmail(env, clientId, origin),
+          ]));
         }
         const dnsReadyAt = await env.DASHBOARD_KV.get(`dns_ready_at:${clientId}`, "text");
         return new Response(JSON.stringify({ ok: true, domain: cfg.domain, httpStatus: resp.status, geoActive, dnsReady, dnsReadyAt: dnsReadyAt || null }), {
