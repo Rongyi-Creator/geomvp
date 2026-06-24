@@ -46,7 +46,7 @@ jobs:
           DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
         run: |
           CLIENT="${{ inputs.client || 'virum' }}"
-          FLAGS="${{ inputs.force == 'true' && '--force' || '' }} --no-email"
+          FLAGS="${{ inputs.force && '--force' || '' }} --no-email"
           pnpm tsx scripts/alignment/run.ts $CLIENT $FLAGS
 
       - name: Notify Slack
