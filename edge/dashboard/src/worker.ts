@@ -965,6 +965,12 @@ async function renderClientFunnel(env: Env, days: number, config: ClientConfig):
       value: dayBotMap.get(d)?.get(name) || 0,
     })),
   }));
+  const xLabels = sortedDays.map((d) => d.slice(5));
+  const lineSeries = botNames.map((name) => ({
+    label: name,
+    color: AI_BOT_COLORS[name] || AI_BOT_DEFAULT_COLOR,
+    points: sortedDays.map((d, i) => ({ x: i, y: dayBotMap.get(d)?.get(name) || 0 })),
+  }));
 
   // Per-bot totals for stat cards
   const botTotals = new Map<string, number>();
@@ -990,8 +996,8 @@ async function renderClientFunnel(env: Env, days: number, config: ClientConfig):
 </div>
 <div class="card">
   <h3>AI Bot Visits Per Day</h3>
-  <div style="font-size:12px;color:#64748b;margin-bottom:8px">Each bar shows which AI assistants visited your site that day</div>
-  ${chartDays.length > 0 ? svgStackedBarChart(chartDays, activationIdx) : '<div class="empty">Data will appear once AI bots start visiting</div>'}
+  <div style="font-size:12px;color:#64748b;margin-bottom:8px">Completed days only · refreshes every ~5 min</div>
+  ${lineSeries.length > 0 ? svgLineChart(lineSeries, xLabels, 800, 240, activationIdx, true) : '<div class="empty">Data will appear once AI bots start visiting</div>'}
 </div>
 <div class="data-source">Data source: Cloudflare Analytics Engine (third-party infrastructure) · Each data point = one verified HTTP request</div>
 </div>`;
@@ -1572,9 +1578,26 @@ ${dnsStatus}
 </div>`;
   }
 
-  const { total, grade } = report.score;
-  const statusIcon: Record<string, string> = { ok: '✅', warning: '⚠️', missing: '❌', unable_to_check: '—', error: '⚠️' };
+  const { total, grade, coverage, consistency, signals } = report.score;
+  const circ = 238.76; // 2π×38
+  const ring = (score: number, max: number, color: string, label: string, desc: string) => {
+    const pct = Math.min(score / max, 1);
+    const offset = circ * (1 - pct);
+    return `<a href="#client-actions" style="text-decoration:none">
+  <div style="text-align:center;transition:transform 0.18s ease;cursor:pointer" onmouseover="this.style.transform='scale(1.07)'" onmouseout="this.style.transform='scale(1)'">
+    <svg width="96" height="96" viewBox="0 0 96 96">
+      <circle cx="48" cy="48" r="38" fill="none" stroke="#1e293b" stroke-width="9"/>
+      <circle cx="48" cy="48" r="38" fill="none" stroke="${color}" stroke-width="9"
+        stroke-dasharray="${circ}" stroke-dashoffset="${offset.toFixed(1)}"
+        stroke-linecap="round" transform="rotate(-90 48 48)"/>
+      <text x="48" y="53" text-anchor="middle" fill="#f8fafc" font-size="19" font-weight="700" font-family="system-ui,-apple-system,sans-serif">${score}</text>
+    </svg>
+    <div style="font-size:13px;font-weight:600;color:#cbd5e1;margin:6px 0 3px">${label}</div>
+    <div style="font-size:11px;color:#64748b;line-height:1.4;max-width:110px;margin:0 auto">${desc}</div>
+  </div></a>`;
+  };
 
+  const statusIcon: Record<string, string> = { ok: '✅', warning: '⚠️', missing: '❌', unable_to_check: '—', error: '⚠️' };
   const platformList = report.platforms.map(p =>
     `<div class="status-row"><span>${escHtml(p.icon)} ${escHtml(p.name_da)}</span><span style="font-size:13px;color:${p.status === 'ok' ? '#10b981' : p.status === 'missing' ? '#ef4444' : '#f59e0b'}">${statusIcon[p.status] ?? '—'} ${escHtml(p.statusText_da)}</span></div>`
   ).join('');
@@ -1593,12 +1616,19 @@ ${dnsStatus}
   return `<div class="section">
 <div class="layer-label">Layer 3 — Platformtilpasning</div>
 ${dnsStatus}
-<div class="insight-banner">
-  <h3 style="color:${escHtml(grade.color)}">${escHtml(String(grade.grade))} — ${total}/100 · ${escHtml(grade.label_da)}</h3>
-  <p>Vi har tjekket dine oplysninger på ${report.platforms.length} platforme. Herunder ser du status og hvad du kan gøre for at forbedre din AI-synlighed.</p>
+<div class="card" style="margin-bottom:20px">
+  <div style="text-align:center;margin-bottom:16px">
+    <span style="font-size:42px;font-weight:900;color:${escHtml(grade.color)};line-height:1">${escHtml(String(grade.grade))}</span>
+    <span style="font-size:15px;color:#94a3b8;margin-left:10px">${total}/100 · ${escHtml(grade.label_da)}</span>
+  </div>
+  <div style="display:flex;gap:20px;justify-content:center;flex-wrap:wrap;padding:8px 0 4px">
+    ${ring(coverage, 40, '#3b82f6', 'Platformdækning', 'Google, Trustpilot, Facebook m.fl.')}
+    ${ring(consistency, 40, '#8b5cf6', 'NAP-konsistens', 'Navn, adresse og telefon ens overalt')}
+    ${ring(signals, 20, '#f59e0b', 'Signalkvalitet', 'JSON-LD schema, SSL, anmeldelser')}
+  </div>
 </div>
 <div class="card" style="margin-bottom:20px"><h3>Platformstatus</h3>${platformList}</div>
-${topActions ? `<h2 style="font-size:16px;color:#f8fafc;margin:0 0 12px">Anbefalede handlinger</h2>${topActions}` : ''}
+${topActions ? `<h2 id="client-actions" style="font-size:16px;color:#f8fafc;margin:0 0 12px;scroll-margin-top:24px">Anbefalede handlinger</h2>${topActions}` : ''}
 <div style="font-size:11px;color:#475569;margin-top:12px">Rapport genereret ${escHtml(report.generatedAt.slice(0, 10))} · Næste check om 2 uger</div>
 </div>`;
 }
