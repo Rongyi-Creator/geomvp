@@ -456,4 +456,43 @@ SLACK_WEBHOOK_URL=        # Slack incoming webhook URL
 
 ---
 
-*文档由开发讨论整理，反映截至 2026-06-23 的完整设计决策。*
+## 十一、客户激活 UX — DNS 引导序列（待实现，依赖 Stripe）
+
+### 设计目标
+付款后立即介入，在用户动力最强的时刻推动 DNS 配置完成。DNS 未配置 = GEO 层未激活 = 用户零体验。
+
+### 触发流
+```
+Stripe webhook → paid_at:${clientId} 写入 KV → 立即发 Day 0 激活邮件
+  ↓ DNS 仍未就绪（GitHub Actions daily cron 检测）
+  Day 3  → 提醒邮件："还差一步"
+  Day 10 → 提醒邮件："需要帮忙？" + 直接回复求助
+  Day 25 → 提醒邮件："试用期还剩5天"（urgency）
+  Day 28 → Slack ops 告警（2天内亲自联系）
+  ↓ DNS 就绪（任何时候）
+  → 欢迎邮件（已实现）+ 提醒序列停止
+```
+
+### Day 0 激活邮件（最重要）
+- **Subject:** `付款成功 ✓ — 最后一步：5分钟设置DNS`
+- **核心内容：**
+  - 付款确认
+  - DNS 3步指南（具体注册商：Simply / GratisDNS / One.com）
+  - "完成后我们自动检测，无需通知我们" — 消除"怎么知道成功了"的焦虑
+  - 直接回复求助（不是表单）
+  - 预期设定："激活后24小时内发送首次AI可见性报告"
+
+### KV 数据结构
+```
+paid_at:${clientId}              → ISO timestamp（Stripe webhook 写入）
+dns_reminder_sent:${clientId}    → JSON 数组，已发过的天数 e.g. [3, 10]
+client_email:${clientId}         → 客户邮件（已实现，wrangler kv put 手动设置）
+```
+
+### 实现时机
+**Stripe 接入 milestone 一起实现**，不单独建空壳。  
+届时新增：`scripts/onboarding/check-dns-pending.ts`（daily cron 调用）+ `send-activation-email.ts`。
+
+---
+
+*文档由开发讨论整理，反映截至 2026-06-24 的完整设计决策。*
