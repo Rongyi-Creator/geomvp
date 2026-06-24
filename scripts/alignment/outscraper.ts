@@ -10,11 +10,26 @@
 //   /google-search  → data[0] is { query, organic_results: [...] }
 const BASE = 'https://api.outscraper.com';
 
+// Retries once on failure — Outscraper's per-account queue is sometimes congested
+// and a poll times out even though a fresh submit succeeds (this caused Google maps
+// and De Gule Sider to intermittently fail). Applies to all endpoints.
 export async function outscraperRequest(
   path: string,
   params: Record<string, string>,
-  { timeoutMs = 180000, pollMs = 3000 }: { timeoutMs?: number; pollMs?: number } = {},
+  { timeoutMs = 180000, pollMs = 3000, retries = 1 }: { timeoutMs?: number; pollMs?: number; retries?: number } = {},
 ): Promise<unknown[]> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await submitAndPoll(path, params, timeoutMs, pollMs);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr;
+}
+
+async function submitAndPoll(path: string, params: Record<string, string>, timeoutMs: number, pollMs: number): Promise<unknown[]> {
   const apiKey = process.env.OUTSCRAPER_API_KEY;
   if (!apiKey) throw new Error('OUTSCRAPER_API_KEY not set');
 
@@ -42,23 +57,12 @@ export async function outscraperRequest(
 }
 
 // Convenience for /google-search: returns the organic_results of the first query.
-// Retries once — Outscraper's per-account queue is sometimes congested and a poll
-// can time out even though the same query succeeds on a fresh submit (this is what
-// made De Gule Sider intermittently show "Kunne ikke kontrolleres").
 export async function googleSearch(
   query: string,
   opts?: { limit?: string; language?: string },
 ): Promise<Array<{ link?: string; title?: string; description?: string }>> {
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const data = await outscraperRequest('/google-search', {
-        query, limit: opts?.limit ?? '3', language: opts?.language ?? 'da',
-      });
-      return (data[0] as { organic_results?: Array<{ link?: string; title?: string; description?: string }> })?.organic_results ?? [];
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw lastErr;
+  const data = await outscraperRequest('/google-search', {
+    query, limit: opts?.limit ?? '3', language: opts?.language ?? 'da',
+  });
+  return (data[0] as { organic_results?: Array<{ link?: string; title?: string; description?: string }> })?.organic_results ?? [];
 }
