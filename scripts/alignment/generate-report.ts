@@ -38,7 +38,8 @@ function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparis
     statuses.push(ps('krak', 'missing', 'Ikke fundet på Krak.dk', []));
   } else {
     const issues = comparisons.filter(c => c.platform === 'krak' && (c.match === 'minor_diff' || c.match === 'major_diff')).map(c => c.diffDescription);
-    statuses.push(ps('krak', issues.length ? 'warning' : 'ok', issues.length ? 'Fundet — oplysninger afviger' : 'Fundet og korrekt', issues, p.krak.listingUrl));
+    // ponytail: we only confirm the listing exists — NAP not scraped from Krak, so don't claim "korrekt"
+    statuses.push(ps('krak', issues.length ? 'warning' : 'ok', issues.length ? 'Fundet — oplysninger afviger' : 'Profil fundet', issues, p.krak.listingUrl));
   }
 
   // De Gule Sider
@@ -48,7 +49,8 @@ function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparis
     statuses.push(ps('guleSider', 'missing', 'Ikke fundet på De Gule Sider', []));
   } else {
     const issues = comparisons.filter(c => c.platform === 'guleSider' && (c.match === 'minor_diff' || c.match === 'major_diff')).map(c => c.diffDescription);
-    statuses.push(ps('guleSider', issues.length ? 'warning' : 'ok', issues.length ? 'Fundet — oplysninger afviger' : 'Fundet og korrekt', issues, p.guleSider.listingUrl));
+    // ponytail: we only confirm the listing exists — NAP not scraped from GuleSider, so don't claim "korrekt"
+    statuses.push(ps('guleSider', issues.length ? 'warning' : 'ok', issues.length ? 'Fundet — oplysninger afviger' : 'Profil fundet', issues, p.guleSider.listingUrl));
   }
 
   // Facebook

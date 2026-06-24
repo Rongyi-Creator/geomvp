@@ -13,7 +13,7 @@ const BASE = 'https://api.outscraper.com';
 export async function outscraperRequest(
   path: string,
   params: Record<string, string>,
-  { timeoutMs = 120000, pollMs = 3000 }: { timeoutMs?: number; pollMs?: number } = {},
+  { timeoutMs = 180000, pollMs = 3000 }: { timeoutMs?: number; pollMs?: number } = {},
 ): Promise<unknown[]> {
   const apiKey = process.env.OUTSCRAPER_API_KEY;
   if (!apiKey) throw new Error('OUTSCRAPER_API_KEY not set');
