@@ -27,7 +27,7 @@ function calcConsistencyScore(comparisons: NapComparison[]): number {
   let score = 0;
   for (const [field, maxPoints] of Object.entries(fieldWeights)) {
     const fieldComparisons = comparisons.filter(c => c.field === field);
-    if (fieldComparisons.length === 0) { score += maxPoints; continue; }
+    if (fieldComparisons.length === 0) continue; // no data = unknown, not perfect
     const avg = fieldComparisons.reduce((s, c) => s + (MATCH_SCORE[c.match] ?? 0), 0) / fieldComparisons.length;
     score += Math.round(avg * maxPoints);
   }

@@ -15,7 +15,9 @@ export function updateGeoLayer(clientId: string, report: AlignmentReport): void 
   }
 
   const prev = (business.sameAs as string[] | undefined) ?? [];
-  business.sameAs = report.sameAsUpdated;
+  // Union: keep existing verified URLs, add newly confirmed ones — never remove on transient failure
+  const merged = Array.from(new Set([...prev, ...report.sameAsUpdated]));
+  business.sameAs = merged;
 
   writeFileSync(businessPath, JSON.stringify(business, null, 2) + '\n');
   console.log(`[alignment] sameAs updated for ${clientId}:`);

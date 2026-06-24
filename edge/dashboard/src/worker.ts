@@ -1132,17 +1132,24 @@ function fmt(n: number): string {
 
 // ── Auth ──
 
-async function checkAuth(request: Request, env: Env): Promise<Response | null> {
+type AuthIdentity = { type: 'ops' } | { type: 'client'; clientId: string };
+
+async function checkAuth(request: Request, env: Env): Promise<Response | AuthIdentity> {
   const url = new URL(request.url);
   const view = url.searchParams.get("view") || "ops";
   const client = url.searchParams.get("client") || "virum";
   const urlToken = url.searchParams.get("token");
   const opsToken = env.DASHBOARD_TOKEN;
 
+  // Validate client param to prevent cookie name / KV key injection
+  if (!/^[a-z0-9-]+$/.test(client)) {
+    return new Response("Invalid client", { status: 400 });
+  }
+
   // Ops token: Bearer header or ops cookie → full access
   const cookieOps = getCookie(request, "dashboard_token");
   if (opsToken && (request.headers.get("Authorization") === `Bearer ${opsToken}` || cookieOps === opsToken)) {
-    return null;
+    return { type: 'ops' };
   }
 
   // Ops token in URL → set cookie and redirect
@@ -1163,7 +1170,7 @@ async function checkAuth(request: Request, env: Env): Promise<Response | null> {
     const clientToken = await env.DASHBOARD_KV.get(`client_token:${client}`, "text");
     if (clientToken) {
       const cookieClient = getCookie(request, `client_token_${client}`);
-      if (cookieClient === clientToken) return null;
+      if (cookieClient === clientToken) return { type: 'client', clientId: client };
 
       if (urlToken === clientToken) {
         const cleanUrl = new URL(request.url);
@@ -1467,7 +1474,7 @@ async function loadScoreHistory(env: Env, client: string): Promise<ScoreHistory 
 }
 
 function renderGeoHealthScoreCard(report: AlignmentReport | null): string {
-  if (!report) {
+  if (!report || !report.score?.grade?.grade) {
     return `<div class="card" style="text-align:center;padding:20px 24px;margin-bottom:24px">
   <div style="font-size:14px;color:#64748b">GEO Health Score — checking platforms soon</div>
 </div>`;
@@ -1663,9 +1670,11 @@ export default {
     }
 
     // Auth check (skip for health endpoint)
+    let auth: AuthIdentity = { type: 'ops' };
     if (path !== "/health") {
-      const authResponse = await checkAuth(request, env);
-      if (authResponse) return authResponse;
+      const authResult = await checkAuth(request, env);
+      if (authResult instanceof Response) return authResult;
+      auth = authResult;
     }
 
     // Health check
@@ -1673,18 +1682,27 @@ export default {
       return new Response("ok");
     }
 
-    // API: Receive alignment report from script
+    // API: Receive alignment report from script (ops only)
     if (path.match(/^\/api\/alignment\/[^/]+$/) && request.method === "POST") {
+      if (auth.type !== 'ops') return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
       const clientId = path.split("/")[3];
       const body = await request.text();
       if (!body) return new Response(JSON.stringify({ error: "Empty body" }), { status: 400, headers: { "Content-Type": "application/json" } });
       try {
         const report = JSON.parse(body) as AlignmentReport;
+        // Validate required fields before writing to KV (CR-02)
+        if (!report.generatedAt || typeof report.score?.total !== 'number' ||
+            report.score.total < 0 || report.score.total > 100 ||
+            !report.score.grade?.grade || !Array.isArray(report.platforms)) {
+          return new Response(JSON.stringify({ error: "Invalid report shape" }), { status: 400, headers: { "Content-Type": "application/json" } });
+        }
         await env.DASHBOARD_KV.put(`alignment:${clientId}:latest`, body);
-        // Append to history
+        // Append to history (dedup by date)
         const histRaw = await env.DASHBOARD_KV.get(`alignment:${clientId}:history`, "text");
         const hist: ScoreHistory = histRaw ? JSON.parse(histRaw) : { clientId, history: [] };
-        hist.history.push({ date: report.generatedAt.slice(0, 10), total: report.score.total, coverage: report.score.breakdown.coverage, consistency: report.score.breakdown.consistency, signals: report.score.breakdown.signals });
+        const today = report.generatedAt.slice(0, 10);
+        hist.history = hist.history.filter(h => h.date !== today);
+        hist.history.push({ date: today, total: report.score.total, coverage: report.score.breakdown.coverage, consistency: report.score.breakdown.consistency, signals: report.score.breakdown.signals });
         if (hist.history.length > 50) hist.history = hist.history.slice(-50);
         await env.DASHBOARD_KV.put(`alignment:${clientId}:history`, JSON.stringify(hist));
         return new Response(JSON.stringify({ ok: true, score: report.score.total, grade: report.score.grade.grade }), { headers: { "Content-Type": "application/json" } });
@@ -1693,9 +1711,12 @@ export default {
       }
     }
 
-    // API: Get latest alignment report
+    // API: Get latest alignment report (ops or matching client)
     if (path.match(/^\/api\/alignment\/[^/]+$/) && request.method === "GET") {
       const clientId = path.split("/")[3];
+      if (auth.type === 'client' && auth.clientId !== clientId) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
       const [reportRaw, histRaw] = await Promise.all([
         env.DASHBOARD_KV.get(`alignment:${clientId}:latest`, "text"),
         env.DASHBOARD_KV.get(`alignment:${clientId}:history`, "text"),
