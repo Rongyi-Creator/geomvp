@@ -1,34 +1,25 @@
 import type { ClientProfile, GoogleResult } from '../types.js';
 import { nameMatches } from '../normalize.js';
+import { outscraperRequest } from '../outscraper.js';
 
-// Uses Outscraper Google Maps Search API
-// Free tier: 500 requests/month
+// Uses Outscraper Google Maps Search API (async submit→poll, see outscraper.ts)
 export async function checkGoogle(client: ClientProfile): Promise<GoogleResult> {
-  const apiKey = process.env.OUTSCRAPER_API_KEY;
-  if (!apiKey) throw new Error('OUTSCRAPER_API_KEY not set');
-
   // Use name + zip for Maps search — city name alone can mismatch municipality in Google Maps
   const query = `${client.name} ${client.address.zip} ${client.address.country}`;
-  const params = new URLSearchParams({
-    query,
-    limit: '3',
-    language: 'da',
-    async: 'false', // CRITICAL: Outscraper defaults async=true → returns {status:Pending} not data
-    fields: 'name,full_address,phone,rating,reviews,working_hours,place_id,google_id,site',
-  });
 
-  const resp = await fetch(`https://api.outscraper.com/maps/search?${params}`, {
-    headers: { 'X-API-KEY': apiKey },
-    signal: AbortSignal.timeout(60000), // sync request holds connection until results ready
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    return errorGoogle(`Outscraper API error ${resp.status}: ${text.slice(0, 100)}`);
+  let results: Record<string, unknown>[];
+  try {
+    const data = await outscraperRequest('/maps/search', {
+      query,
+      limit: '3',
+      language: 'da',
+      fields: 'name,full_address,phone,rating,reviews,working_hours,place_id,google_id,site',
+    });
+    // maps/search: data[0] is the array of place objects for this query
+    results = (data[0] as Record<string, unknown>[]) ?? [];
+  } catch (e) {
+    return errorGoogle(`Outscraper Maps error: ${String(e)}`);
   }
-
-  const data = await resp.json() as { data?: Array<Record<string, unknown>[]> };
-  const results: Record<string, unknown>[] = data.data?.[0] ?? [];
 
   // Find the best match by name (fuzzy)
   const match = results.find(r => nameMatches(String(r.name ?? ''), client.name));

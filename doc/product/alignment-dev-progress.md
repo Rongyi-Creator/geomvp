@@ -39,8 +39,17 @@ timeout 提至 60s（同步会阻塞 20-60s）。涉及文件：
 - `platforms/trustpilot.ts`：直连 dk.trustpilot.com 稳定 403，改用 Outscraper Google Search
   `site:trustpilot.com "name"`（rating/reviewCount 拿不到 → null，但不计分）
 
-**下一步验证**：GitHub Actions 手动触发（带 force），预期 Google/Krak/GuleSider/Facebook
-不再全空，score 显著上升。本地无法测（`.env.local` 无 OUTSCRAPER_API_KEY，仅 CI secret 有）。
+**第一轮修复（async=false 同步）暴露了两个新问题**（run 28122105982 日志）：
+1. `results.find is not a function` —— google-search 响应里 `data[0]` 是**对象** `{query, organic_results:[...]}`，不是数组。结果在 `.organic_results`，字段是 `description` 不是 `snippet`。
+2. Google(maps) + Facebook **60s 超时** —— 同步模式 maps/search 重 + 4 个并发同步连接在 Outscraper 端排队，撑爆 60s。
+
+**第二轮修复（最终方案）**：改用 Outscraper 官方推荐的**异步 submit→poll** 模式。
+- 新增 `scripts/alignment/outscraper.ts`：`outscraperRequest()` 提交 async=true，拿 `results_location` 轮询到 Success（poll 3s，timeout 120s）；`googleSearch()` 便捷封装返回 `organic_results`。
+- 5 个平台全部改用它，删掉重复的 fetch/parse 样板。google.ts 包 try/catch 让超时返回带细节的 errorGoogle 而非泛化 reject。
+- 解决超时（轮询不占长连接）+ 解决解析（统一正确的 `data[0].organic_results` 路径）。
+
+**下一步验证**：GitHub Actions 手动触发（带 force），预期 Krak/GuleSider/Facebook/Trustpilot
+不再 `results.find` 报错，Google 不再超时。本地无法测（`.env.local` 无 OUTSCRAPER_API_KEY，仅 CI secret 有）。
 
 ## 待实现：客户 Dashboard UX 改进
 
