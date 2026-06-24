@@ -8,7 +8,7 @@ export async function checkFacebook(client: ClientProfile): Promise<FacebookResu
     return { exists: false, pageUrl: null, name: null, napStatus: 'not_found', error: 'OUTSCRAPER_API_KEY not set' };
   }
 
-  const query = `site:facebook.com "${client.name}" "${client.address.city}"`;
+  const query = `site:facebook.com "${client.name}"`;
   const params = new URLSearchParams({ query, limit: '3', language: 'da' });
 
   try {

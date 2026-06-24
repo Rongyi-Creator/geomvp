@@ -5,7 +5,7 @@ export async function checkGuleSider(client: ClientProfile): Promise<GuleSiderRe
   const apiKey = process.env.OUTSCRAPER_API_KEY;
   if (!apiKey) return { exists: false, name: null, address: null, phone: null, listingUrl: null, error: 'OUTSCRAPER_API_KEY not set' };
 
-  const query = `site:degulesider.dk "${client.name}" "${client.address.city}"`;
+  const query = `site:degulesider.dk "${client.name}"`;
   const params = new URLSearchParams({ query, limit: '3', language: 'da' });
 
   try {

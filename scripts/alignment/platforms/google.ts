@@ -7,7 +7,8 @@ export async function checkGoogle(client: ClientProfile): Promise<GoogleResult> 
   const apiKey = process.env.OUTSCRAPER_API_KEY;
   if (!apiKey) throw new Error('OUTSCRAPER_API_KEY not set');
 
-  const query = `${client.name} ${client.address.city}`;
+  // Use name + zip for Maps search — city name alone can mismatch municipality in Google Maps
+  const query = `${client.name} ${client.address.zip} ${client.address.country}`;
   const params = new URLSearchParams({
     query,
     limit: '3',
