@@ -1,0 +1,92 @@
+{
+  "timestamp": "2026-06-18T15:28:26.420Z",
+  "clientName": "virum-akupunktur",
+  "pass": true,
+  "checks": [
+    {
+      "name": "LocalBusiness schema present",
+      "status": "pass",
+      "detail": "Found"
+    },
+    {
+      "name": "LB: name",
+      "status": "pass",
+      "detail": "name: Virum Akupunktur"
+    },
+    {
+      "name": "LB: address",
+      "status": "pass",
+      "detail": "address: present"
+    },
+    {
+      "name": "LB: phone",
+      "status": "warn",
+      "detail": "phone: MISSING"
+    },
+    {
+      "name": "LB: hours",
+      "status": "warn",
+      "detail": "hours: 0 entries"
+    },
+    {
+      "name": "FAQPage schema present",
+      "status": "pass",
+      "detail": "8 questions"
+    },
+    {
+      "name": "Page count",
+      "status": "pass",
+      "detail": "38 pages (need ≥ 5)"
+    },
+    {
+      "name": "No CDN references",
+      "status": "pass",
+      "detail": "0 external CDN img src found"
+    },
+    {
+      "name": "All images have alt",
+      "status": "pass",
+      "detail": "0 images missing alt"
+    },
+    {
+      "name": "Booking links preserved",
+      "status": "warn",
+      "detail": "0 pages have booking link"
+    },
+    {
+      "name": "Unique titles",
+      "status": "pass",
+      "detail": "38/38 unique"
+    },
+    {
+      "name": "Unique descriptions",
+      "status": "pass",
+      "detail": "38/38 unique"
+    },
+    {
+      "name": "Single H1 per page",
+      "status": "pass",
+      "detail": "OK"
+    },
+    {
+      "name": "robots.txt exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "llms.txt exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "sitemap exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "Lighthouse",
+      "status": "warn",
+      "detail": "Skipped (run manually)"
+    }
+  ]
+}

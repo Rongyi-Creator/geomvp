@@ -1,0 +1,36 @@
+{
+  "items": [
+    {
+      "question": "Hvad er akupunktur?",
+      "answer": "Akupunktur er en behandlingsform med egne sider på klinikkens hjemmeside, der beskriver hvad akupunktur er og hvordan det virker."
+    },
+    {
+      "question": "Hvordan foregår en akupunkturbehandling?",
+      "answer": "Klinikken beskriver på sin hjemmeside, hvordan en behandling foregår – fra konsultation til selve nålebehandlingen."
+    },
+    {
+      "question": "Hvilke smertetilstande kan behandles med akupunktur?",
+      "answer": "Virum Akupunktur tilbyder smertebehandling for bl.a. lændesmerter, rygsmerter, iskias, frossen skulder, musearm, tennisalbue, muskelspændinger og piskeslag/whiplash."
+    },
+    {
+      "question": "Kan akupunktur hjælpe mod hovedpine og migræne?",
+      "answer": "Ja, klinikken tilbyder akupunkturbehandling specifikt rettet mod hovedpine og migræne."
+    },
+    {
+      "question": "Behandler I fordøjelsesproblemer med akupunktur?",
+      "answer": "Ja, klinikken behandler fordøjelsesproblemer, irriteret tyktarm, mavesyre og halsbrand, mavesår samt Morbus Crohn og colitis."
+    },
+    {
+      "question": "Kan akupunktur hjælpe ved overgangsalder og hormonelle ubalancer?",
+      "answer": "Ja, Virum Akupunktur tilbyder behandling af overgangsalder, hormonelle ubalancer, PMS og menstruationssmerter/endometriose."
+    },
+    {
+      "question": "Tilbyder I rygestop med akupunktur?",
+      "answer": "Ja, klinikken tilbyder rygestopbehandling via akupunktur."
+    },
+    {
+      "question": "Hvad er kosmetisk akupunktur?",
+      "answer": "Klinikken tilbyder rynker og kosmetisk akupunktur som en behandlingsform, der beskrives nærmere på den dedikerede side på hjemmesiden."
+    }
+  ]
+}

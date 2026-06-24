@@ -1,0 +1,51 @@
+{
+  "source": "extracted from original site",
+  "active": "scheme-a",
+  "schemes": [
+    {
+      "id": "scheme-a",
+      "name": "Original",
+      "colors": {
+        "primary": "#4a7c6f",
+        "primary-light": "#6a9e91",
+        "primary-dark": "#2e5c50",
+        "bg": "#ffffff",
+        "bg-alt": "#f4f7f6",
+        "text": "#1a1a1a",
+        "text-muted": "#6b7280",
+        "accent": "#c8a96e",
+        "border": "#e5e7eb"
+      }
+    },
+    {
+      "id": "scheme-b",
+      "name": "Warm",
+      "colors": {
+        "primary": "#7a6450",
+        "primary-light": "#9c8470",
+        "primary-dark": "#5a4838",
+        "bg": "#fffdf9",
+        "bg-alt": "#fdf5ec",
+        "text": "#1a1a1a",
+        "text-muted": "#6b7280",
+        "accent": "#c8a96e",
+        "border": "#e8ddd4"
+      }
+    },
+    {
+      "id": "scheme-c",
+      "name": "Cool",
+      "colors": {
+        "primary": "#3a6b8a",
+        "primary-light": "#5a8baa",
+        "primary-dark": "#1e4f6c",
+        "bg": "#ffffff",
+        "bg-alt": "#f0f5f9",
+        "text": "#1a1a1a",
+        "text-muted": "#6b7280",
+        "accent": "#5a9e8f",
+        "border": "#d8e4ed"
+      }
+    }
+  ]
+}
