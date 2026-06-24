@@ -1581,17 +1581,23 @@ ${dnsStatus}
 
   const { total, grade, coverage, consistency, signals } = report.score;
   const circ = 289.0; // 2π×46
-  const ring = (score: number, max: number, color: string, label: string, attribution: string) => {
-    const pct = Math.min(score / max, 1);
+  // NAP is only measurable from Google Maps; if Google isn't found, consistency is
+  // structurally 0 (unmeasured, not "wrong") — show it as pending, not a red empty ring.
+  const googleStatus = report.platforms.find(p => p.id === 'google')?.status;
+  const napPending = consistency === 0 && googleStatus !== 'ok';
+  const ring = (score: number, max: number, color: string, label: string, attribution: string, pending = false) => {
+    const pct = pending ? 0 : Math.min(score / max, 1);
     const offset = circ * (1 - pct);
+    const stroke = pending ? '#475569' : color;
+    const centerText = pending ? '—' : `${score}/${max}`;
     return `<a href="#client-actions" style="text-decoration:none">
   <div style="text-align:center;transition:transform 0.18s ease;cursor:pointer" onmouseover="this.style.transform='scale(1.07)'" onmouseout="this.style.transform='scale(1)'">
     <svg width="120" height="120" viewBox="0 0 120 120">
       <circle cx="60" cy="60" r="46" fill="none" stroke="#334155" stroke-width="10"/>
-      <circle cx="60" cy="60" r="46" fill="none" stroke="${color}" stroke-width="10"
+      <circle cx="60" cy="60" r="46" fill="none" stroke="${stroke}" stroke-width="10"
         stroke-dasharray="${circ}" stroke-dashoffset="${offset.toFixed(1)}"
         stroke-linecap="round" transform="rotate(-90 60 60)"/>
-      <text x="60" y="57" text-anchor="middle" fill="#f8fafc" font-size="18" font-weight="700" font-family="system-ui,-apple-system,sans-serif">${score}/${max}</text>
+      <text x="60" y="57" text-anchor="middle" fill="#f8fafc" font-size="18" font-weight="700" font-family="system-ui,-apple-system,sans-serif">${centerText}</text>
     </svg>
     <div style="font-size:13px;font-weight:600;color:#cbd5e1;margin:6px 0 2px">${label}</div>
     <div style="font-size:11px;color:#64748b;line-height:1.4">${attribution}</div>
@@ -1626,7 +1632,7 @@ ${dnsStatus}
     </div>
     <div style="display:flex;gap:32px;flex-wrap:wrap;justify-content:center">
       ${ring(coverage, 40, '#3b82f6', 'Platformdækning', 'Du kan forbedre')}
-      ${ring(consistency, 40, '#8b5cf6', 'NAP-konsistens', 'Du kan forbedre')}
+      ${ring(consistency, 40, '#8b5cf6', 'NAP-konsistens', napPending ? 'Afventer Google-profil' : 'Du kan forbedre', napPending)}
       ${ring(signals, 20, '#f59e0b', 'Signalkvalitet', '✓ Sat af os')}
     </div>
   </div>
