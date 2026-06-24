@@ -88,8 +88,12 @@ async function main() {
   const ext = ['google', 'trustpilot', 'krak', 'guleSider', 'facebook'] as const;
   const platforms = checkResult.platforms as Record<string, { error?: string }>;
   const infraErrors = ext.filter(k => platforms[k]?.error);
-  if (infraErrors.length >= 3) {
-    console.error(`[alignment] Degraded run — ${infraErrors.length}/5 platforms failed with infra errors (${infraErrors.join(', ')}). Skipping dashboard push to avoid publishing a misleading score.`);
+  // Google infra-failing alone makes the score unreliable: it's the sole NAP source
+  // and largest coverage weight, so its timeout drops ~55 of 100 points. A clean
+  // Google "not found" (no error) is legit data and does NOT trigger this.
+  if (platforms.google?.error || infraErrors.length >= 3) {
+    const why = platforms.google?.error ? `Google infra error (${platforms.google.error})` : `${infraErrors.length}/5 platforms failed`;
+    console.error(`[alignment] Degraded run — ${why}. Skipping dashboard push to avoid publishing a misleading score.`);
     process.exit(1);
   }
 
