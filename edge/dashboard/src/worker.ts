@@ -1579,21 +1579,21 @@ ${dnsStatus}
   }
 
   const { total, grade, coverage, consistency, signals } = report.score;
-  const circ = 238.76; // 2π×38
-  const ring = (score: number, max: number, color: string, label: string, desc: string) => {
+  const circ = 289.0; // 2π×46
+  const ring = (score: number, max: number, color: string, label: string, attribution: string) => {
     const pct = Math.min(score / max, 1);
     const offset = circ * (1 - pct);
     return `<a href="#client-actions" style="text-decoration:none">
   <div style="text-align:center;transition:transform 0.18s ease;cursor:pointer" onmouseover="this.style.transform='scale(1.07)'" onmouseout="this.style.transform='scale(1)'">
-    <svg width="96" height="96" viewBox="0 0 96 96">
-      <circle cx="48" cy="48" r="38" fill="none" stroke="#1e293b" stroke-width="9"/>
-      <circle cx="48" cy="48" r="38" fill="none" stroke="${color}" stroke-width="9"
+    <svg width="120" height="120" viewBox="0 0 120 120">
+      <circle cx="60" cy="60" r="46" fill="none" stroke="#334155" stroke-width="10"/>
+      <circle cx="60" cy="60" r="46" fill="none" stroke="${color}" stroke-width="10"
         stroke-dasharray="${circ}" stroke-dashoffset="${offset.toFixed(1)}"
-        stroke-linecap="round" transform="rotate(-90 48 48)"/>
-      <text x="48" y="53" text-anchor="middle" fill="#f8fafc" font-size="19" font-weight="700" font-family="system-ui,-apple-system,sans-serif">${score}</text>
+        stroke-linecap="round" transform="rotate(-90 60 60)"/>
+      <text x="60" y="57" text-anchor="middle" fill="#f8fafc" font-size="18" font-weight="700" font-family="system-ui,-apple-system,sans-serif">${score}/${max}</text>
     </svg>
-    <div style="font-size:13px;font-weight:600;color:#cbd5e1;margin:6px 0 3px">${label}</div>
-    <div style="font-size:11px;color:#64748b;line-height:1.4;max-width:110px;margin:0 auto">${desc}</div>
+    <div style="font-size:13px;font-weight:600;color:#cbd5e1;margin:6px 0 2px">${label}</div>
+    <div style="font-size:11px;color:#64748b;line-height:1.4">${attribution}</div>
   </div></a>`;
   };
 
@@ -1617,14 +1617,17 @@ ${dnsStatus}
 <div class="layer-label">Layer 3 — Platformtilpasning</div>
 ${dnsStatus}
 <div class="card" style="margin-bottom:20px">
-  <div style="text-align:center;margin-bottom:16px">
-    <span style="font-size:42px;font-weight:900;color:${escHtml(grade.color)};line-height:1">${escHtml(String(grade.grade))}</span>
-    <span style="font-size:15px;color:#94a3b8;margin-left:10px">${total}/100 · ${escHtml(grade.label_da)}</span>
-  </div>
-  <div style="display:flex;gap:20px;justify-content:center;flex-wrap:wrap;padding:8px 0 4px">
-    ${ring(coverage, 40, '#3b82f6', 'Platformdækning', 'Google, Trustpilot, Facebook m.fl.')}
-    ${ring(consistency, 40, '#8b5cf6', 'NAP-konsistens', 'Navn, adresse og telefon ens overalt')}
-    ${ring(signals, 20, '#f59e0b', 'Signalkvalitet', 'JSON-LD schema, SSL, anmeldelser')}
+  <div style="display:flex;align-items:center;gap:40px;flex-wrap:wrap;justify-content:center;padding:8px 0 4px">
+    <div style="text-align:center;min-width:80px">
+      <div style="font-size:72px;font-weight:900;color:${escHtml(grade.color)};line-height:1">${escHtml(String(grade.grade))}</div>
+      <div style="font-size:13px;color:#94a3b8;margin-top:6px">${total}/100</div>
+      <div style="font-size:12px;color:#64748b">${escHtml(grade.label_da)}</div>
+    </div>
+    <div style="display:flex;gap:32px;flex-wrap:wrap;justify-content:center">
+      ${ring(coverage, 40, '#3b82f6', 'Platformdækning', 'Du kan forbedre')}
+      ${ring(consistency, 40, '#8b5cf6', 'NAP-konsistens', 'Du kan forbedre')}
+      ${ring(signals, 20, '#f59e0b', 'Signalkvalitet', '✓ Sat af os')}
+    </div>
   </div>
 </div>
 <div class="card" style="margin-bottom:20px"><h3>Platformstatus</h3>${platformList}</div>
@@ -1909,7 +1912,6 @@ ${renderStyles()}
 <body>
 <div class="container">
 ${renderClientHeader(config, generatedAt, days, client)}
-${renderGeoHealthScoreCard(alignReport)}
 ${funnel}
 ${results}
 ${renderClientLayer3(alignReport, dnsReadyAt)}
