@@ -1466,6 +1466,7 @@ interface AlignmentAction { priority: number; action_da: string; timeEstimate_da
 interface AlignmentReport { clientId: string; generatedAt: string; runType: string; client: { name: string; domain: string }; score: AlignmentScore; platforms: AlignmentPlatform[]; inconsistencies: { platform: string; field: string; match: string; diffDescription: string; }[]; prioritizedActions: AlignmentAction[]; sameAsUpdated: string[]; }
 interface ScoreHistoryEntry { date: string; total: number; coverage: number; consistency: number; signals: number; }
 interface ScoreHistory { clientId: string; history: ScoreHistoryEntry[]; }
+interface ReportIndexEntry { date: string; title: string; }
 
 async function loadAlignmentReport(env: Env, client: string): Promise<AlignmentReport | null> {
   const raw = await env.DASHBOARD_KV.get(`alignment:${client}:latest`, "text");
@@ -1565,7 +1566,7 @@ ${historyHtml}${sameAsHtml}
 </div>`;
 }
 
-function renderClientLayer3(report: AlignmentReport | null, dnsReadyAt: string | null): string {
+function renderClientLayer3(report: AlignmentReport | null, dnsReadyAt: string | null, reportIndex: ReportIndexEntry[], clientId: string): string {
   const dnsStatus = dnsReadyAt
     ? `<div style="font-size:13px;color:#10b981;margin-bottom:16px">✅ GEO Layer aktiv siden ${escHtml(dnsReadyAt.slice(0, 10))}</div>`
     : `<div style="font-size:13px;color:#94a3b8;margin-bottom:16px">⏳ Afventer DNS-opsætning (typisk 24-48t)</div>`;
@@ -1633,6 +1634,18 @@ ${dnsStatus}
 <div class="card" style="margin-bottom:20px"><h3>Platformstatus</h3>${platformList}</div>
 ${topActions ? `<h2 id="client-actions" style="font-size:16px;color:#f8fafc;margin:0 0 12px;scroll-margin-top:24px">Anbefalede handlinger</h2>${topActions}` : ''}
 <div style="font-size:11px;color:#475569;margin-top:12px">Rapport genereret ${escHtml(report.generatedAt.slice(0, 10))} · Næste check om 2 uger</div>
+${reportIndex.length > 0 ? `
+<div class="card" style="margin-top:20px">
+  <h3 style="margin-bottom:12px">行动报告</h3>
+  ${reportIndex.map(r => `
+  <a href="/report/${escHtml(clientId)}/${escHtml(r.date)}" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#0f172a;border-radius:8px;text-decoration:none;margin-bottom:6px">
+    <div>
+      <div style="font-size:14px;font-weight:600;color:#f8fafc">${escHtml(r.title)}</div>
+      <div style="font-size:12px;color:#64748b;margin-top:2px">${escHtml(r.date.slice(0,4))}-${escHtml(r.date.slice(4,6))}-${escHtml(r.date.slice(6,8))}</div>
+    </div>
+    <span style="color:#3b82f6;font-size:14px">→</span>
+  </a>`).join('')}
+</div>` : ''}
 </div>`;
 }
 
@@ -1879,6 +1892,40 @@ export default {
       });
     }
 
+    // Report: serve stored HTML report (client or ops auth)
+    if (path.match(/^\/report\/[^/]+\/[^/]+$/) && request.method === "GET") {
+      const parts = path.split("/");
+      const clientId = parts[2];
+      const date = parts[3];
+      if (!/^[a-z0-9-]+$/.test(clientId) || !/^\d{8}$/.test(date)) {
+        return new Response("Invalid request", { status: 400 });
+      }
+      // Auth: ops already checked above; also accept client token for this path
+      if (auth.type !== 'ops') {
+        const clientToken = await env.DASHBOARD_KV.get(`client_token:${clientId}`, "text");
+        const urlToken = url.searchParams.get("token");
+        const cookieClient = getCookie(request, `client_token_${clientId}`);
+        const tokenMatch = clientToken && (cookieClient === clientToken || urlToken === clientToken);
+        if (!tokenMatch) {
+          return new Response(renderClientLoginPage(), { status: 401, headers: { "Content-Type": "text/html;charset=utf-8" } });
+        }
+        if (urlToken === clientToken && cookieClient !== clientToken) {
+          const clean = new URL(request.url);
+          clean.searchParams.delete("token");
+          return new Response(null, {
+            status: 302,
+            headers: {
+              Location: clean.pathname + clean.search,
+              "Set-Cookie": `client_token_${clientId}=${clientToken}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000`,
+            },
+          });
+        }
+      }
+      const reportHtml = await env.DASHBOARD_KV.get(`report:${clientId}:${date}`, "text");
+      if (!reportHtml) return new Response("Rapport ikke fundet", { status: 404, headers: { "Content-Type": "text/plain;charset=utf-8" } });
+      return new Response(reportHtml, { headers: { "Content-Type": "text/html;charset=utf-8", "Cache-Control": "public, max-age=3600" } });
+    }
+
     // Dashboard HTML
     const days = parseInt(url.searchParams.get("days") || "7");
     const view = url.searchParams.get("view") || "ops";
@@ -1893,12 +1940,14 @@ export default {
     }
 
     if (view === "client") {
-      const [funnel, results, alignReport, dnsReadyAt] = await Promise.all([
+      const [funnel, results, alignReport, dnsReadyAt, reportIndexRaw] = await Promise.all([
         renderClientFunnel(env, days, config),
         renderClientResults(env, client),
         loadAlignmentReport(env, client),
         env.DASHBOARD_KV.get(`dns_ready_at:${client}`, "text"),
+        env.DASHBOARD_KV.get(`report_index:${client}`, "text"),
       ]);
+      const reportIndex: ReportIndexEntry[] = reportIndexRaw ? (() => { try { return JSON.parse(reportIndexRaw) as ReportIndexEntry[]; } catch { return []; } })() : [];
 
       const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1914,7 +1963,7 @@ ${renderStyles()}
 ${renderClientHeader(config, generatedAt, days, client)}
 ${funnel}
 ${results}
-${renderClientLayer3(alignReport, dnsReadyAt)}
+${renderClientLayer3(alignReport, dnsReadyAt, reportIndex, client)}
 <div style="text-align:center;padding:24px 0;color:#475569;font-size:12px">
   Powered by GEO Reforge
 </div>

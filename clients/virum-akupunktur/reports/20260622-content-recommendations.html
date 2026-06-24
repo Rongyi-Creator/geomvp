@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>AI 搜索可见度优化建议 — Virumakupunktur</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: #1a1a1a;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+  .page {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding-bottom: 24px;
+    border-bottom: 1px solid #e5e7eb;
+    margin-bottom: 32px;
+  }
+  .brand {
+    font-size: 13px;
+    font-weight: 600;
+    color: #6b7280;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .print-btn {
+    background: #f3f4f6;
+    border: none;
+    padding: 7px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #374151;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .print-btn:hover { background: #e5e7eb; }
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #111827;
+    margin: 0 0 6px;
+    line-height: 1.3;
+  }
+  .meta {
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 28px;
+  }
+  .intro {
+    background: #f9fafb;
+    border-radius: 10px;
+    padding: 18px 20px;
+    font-size: 14px;
+    color: #374151;
+    margin-bottom: 36px;
+    border: 1px solid #f3f4f6;
+  }
+  .section {
+    margin-bottom: 40px;
+    padding-bottom: 40px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+  .section:last-of-type {
+    border-bottom: none;
+  }
+  .section-num {
+    display: inline-block;
+    background: #111827;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 20px;
+    margin-bottom: 10px;
+    letter-spacing: 0.05em;
+  }
+  h2 {
+    font-size: 17px;
+    font-weight: 700;
+    color: #111827;
+    margin: 0 0 8px;
+  }
+  .why {
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 14px;
+    padding-left: 12px;
+    border-left: 3px solid #e5e7eb;
+  }
+  .action-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+  }
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin-bottom: 4px; color: #374151; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    margin: 12px 0;
+  }
+  th {
+    background: #f9fafb;
+    text-align: left;
+    padding: 8px 12px;
+    font-weight: 600;
+    color: #374151;
+    border: 1px solid #e5e7eb;
+  }
+  td {
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    color: #4b5563;
+  }
+  .example {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 14px;
+    color: #374151;
+    font-style: italic;
+    margin: 12px 0;
+  }
+  .steps {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 12px 0;
+  }
+  .steps h3 {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0 0 12px;
+    color: #111827;
+  }
+  .step {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .step-n {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    background: #111827;
+    color: #fff;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 2px;
+  }
+  .step-body { flex: 1; }
+  .step-title { font-weight: 600; color: #111827; }
+  .step-desc { font-size: 13px; color: #6b7280; }
+  .done-section {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-top: 40px;
+  }
+  .done-section h2 {
+    font-size: 15px;
+    color: #166534;
+    margin-bottom: 12px;
+  }
+  .done-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 14px;
+    color: #166534;
+  }
+  .check { flex-shrink: 0; font-size: 16px; }
+  .footer {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid #e5e7eb;
+    font-size: 13px;
+    color: #9ca3af;
+    text-align: center;
+  }
+  .footer a { color: #6b7280; }
+  @media print {
+    .print-btn { display: none; }
+    body { font-size: 13px; }
+    .page { padding: 0; max-width: 100%; }
+    .section { page-break-inside: avoid; }
+  }
+  @media (max-width: 480px) {
+    .header { flex-direction: column; gap: 12px; }
+    h1 { font-size: 19px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div>
+      <div class="brand">Found by AI</div>
+    </div>
+    <button class="print-btn" onclick="window.print()">打印 / 保存 PDF</button>
+  </div>
+
+  <h1>AI 搜索可见度优化建议</h1>
+  <div class="meta">Virumakupunktur · 由 Found by AI 提供 · 2026年6月</div>
+
+  <div class="intro">
+    我们分析了 ChatGPT、Google AI、Perplexity 等 AI 搜索引擎读取贵诊所网站的方式。以下 5 项内容改动，将显著提升当潜在患者向 AI 提问时，贵诊所被推荐的概率。<br><br>
+    所有改动均为<strong>内容和文字层面</strong>，无需修改代码。
+  </div>
+
+  <!-- Section 1 -->
+  <div class="section">
+    <div class="section-num">第 1 条</div>
+    <h2>在首页顶部添加诊所概览信息块</h2>
+    <div class="why">
+      AI 在回答"哪里有好的针灸诊所"时，会优先引用页面中有清晰、集中业务信息的内容。目前首页没有这样的摘要块，AI 只能从分散的文字中拼凑信息，准确率低。
+    </div>
+    <div class="action-label">需要添加的内容</div>
+    <p>在导航栏下方加一个简短的信息区域，包含以下六项：</p>
+    <ul>
+      <li><strong>诊所名称：</strong> Virumakupunktur</li>
+      <li><strong>地址：</strong> [诊所地址]</li>
+      <li><strong>电话：</strong> [电话号码]</li>
+      <li><strong>营业时间：</strong> 例如：周一至周五 9:00–17:00</li>
+      <li><strong>价格：</strong> 首次咨询 [X] 克朗 · 后续治疗 [X] 克朗/次</li>
+      <li><strong>预约方式：</strong> 电话预约 / 线上预约 [链接]</li>
+    </ul>
+    <p style="font-size:13px;color:#6b7280">不需要特别突出的视觉设计，一段清晰的文字即可。</p>
+  </div>
+
+  <!-- Section 2 -->
+  <div class="section">
+    <div class="section-num">第 2 条</div>
+    <h2>明确写出价格和保险报销信息</h2>
+    <div class="why">
+      "针灸多少钱？"和"我的保险能报销针灸吗？"是患者向 AI 提问最频繁的两个问题。有具体数字的页面被 AI 引用的频率，远高于只说"价格请来电咨询"的页面。
+    </div>
+    <div class="action-label">需要添加的内容</div>
+    <p>在现有的价格页或服务页中补充：</p>
+    <ul>
+      <li>每次治疗的价格（含套餐/疗程价）</li>
+      <li>每次治疗的时长（例如：首次 45 分钟，后续 30 分钟）</li>
+      <li>哪些保险可以报销（例如：Sygeforsikringen "danmark"、Skandia、Tryg），以及每次报销金额</li>
+      <li>附上保险公司申请页面的链接</li>
+    </ul>
+    <div class="example">
+      "每次治疗 30–45 分钟，费用为 550 克朗。Sygeforsikringen 'danmark' 会员每次可报销最多 255 克朗。申请报销请访问：[链接]。"
+    </div>
+  </div>
+
+  <!-- Section 3 -->
+  <div class="section">
+    <div class="section-num">第 3 条</div>
+    <h2>第一次出现时解释专业缩写</h2>
+    <div class="why">
+      "RAB"、"TCM" 等缩写对许多患者和 AI 来说都是陌生的。解释术语的页面在 AI 回答中更受信任，因为它们对读者更友好。
+    </div>
+    <div class="action-label">需要修改的内容</div>
+    <p>每个缩写第一次出现时写出全称：</p>
+    <table>
+      <tr><th>现有写法</th><th>建议改为</th></tr>
+      <tr>
+        <td>RAB 认证针灸师</td>
+        <td>RAB 认证针灸师（Registreret Akupunktør i Danmark，<a href="#">查看认证注册</a>）</td>
+      </tr>
+      <tr>
+        <td>TCM</td>
+        <td>传统中医（TCM）</td>
+      </tr>
+    </table>
+    <p style="font-size:13px;color:#6b7280">每页只需在<strong>首次出现时</strong>写全称，后续可继续使用缩写。</p>
+  </div>
+
+  <!-- Section 4 -->
+  <div class="section">
+    <div class="section-num">第 4 条</div>
+    <h2>将常见问题写成明确的问答格式</h2>
+    <div class="why">
+      AI 引擎会直接从"问题 + 答案"格式中提取内容来回答用户提问。如果页面上有"针灸适合哪些症状？"这样的小标题，AI 会在患者提同样问题时直接引用。
+    </div>
+    <div class="action-label">建议添加的问题（可根据实际情况调整）</div>
+    <ul>
+      <li>针灸适合治疗哪些症状？</li>
+      <li>扎针会痛吗？</li>
+      <li>一般需要几次治疗才能看到效果？</li>
+      <li>保险可以报销针灸治疗吗？</li>
+      <li>第一次来诊所会发生什么？</li>
+      <li>针灸可以与药物治疗同时进行吗？</li>
+      <li>孕期可以做针灸吗？</li>
+    </ul>
+    <p style="font-size:13px;color:#6b7280">每个问题下方给出 2–4 句简洁的回答，以问句作为小标题。</p>
+  </div>
+
+  <!-- Section 5 -->
+  <div class="section">
+    <div class="section-num">第 5 条</div>
+    <h2>用步骤说明"第一次就诊流程"</h2>
+    <div class="why">
+      "第一次去针灸诊所会经历什么？"是预约前患者搜索最多的问题之一。直接回答这个问题的诊所，在 AI 推荐中明显占优，因为它降低了患者的顾虑，促进预约。
+    </div>
+    <div class="action-label">参考内容（可直接使用或调整措辞）</div>
+    <div class="steps">
+      <h3>第一次就诊流程</h3>
+      <div class="step">
+        <div class="step-n">1</div>
+        <div class="step-body">
+          <div class="step-title">问诊（约 15 分钟）</div>
+          <div class="step-desc">我们会了解您的健康历史、症状及治疗目标。</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">2</div>
+        <div class="step-body">
+          <div class="step-title">诊断</div>
+          <div class="step-desc">依据传统中医方法评估脉象和舌象。</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">3</div>
+        <div class="step-body">
+          <div class="step-title">针灸治疗（约 30 分钟）</div>
+          <div class="step-desc">将细针置于相应穴位，大多数人会感到深度放松。</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">4</div>
+        <div class="step-body">
+          <div class="step-title">制定方案</div>
+          <div class="step-desc">根据您的情况，共同商定后续治疗频率。</div>
+        </div>
+      </div>
+      <p style="font-size:13px;color:#6b7280;margin:12px 0 0">首次就诊约 60 分钟，后续治疗约 30–45 分钟。</p>
+    </div>
+  </div>
+
+  <!-- Already Done -->
+  <div class="done-section">
+    <h2>我们已为您完成的部分</h2>
+    <p style="font-size:13px;color:#166534;margin:0 0 14px">以下内容无需您操作，已由 Found by AI 自动处理：</p>
+    <div class="done-item"><span class="check">✅</span><span>所有页面已注入 Schema.org 结构化数据（AI 可直接读取的业务信息）</span></div>
+    <div class="done-item"><span class="check">✅</span><span>页面标题和 meta 描述已针对 AI 搜索优化</span></div>
+    <div class="done-item"><span class="check">✅</span><span>ChatGPT、Google AI、Perplexity 等 AI 爬虫已获得完整访问权限</span></div>
+    <div class="done-item"><span class="check">✅</span><span>FAQ 问答 Schema 已向 Google 和 ChatGPT 注册</span></div>
+  </div>
+
+  <div class="footer">
+    如有疑问，请联系：<a href="mailto:hej@foundbyai.dk">hej@foundbyai.dk</a><br>
+    Found by AI · 报告生成于 2026年6月22日
+  </div>
+
+</div>
+</body>
+</html>

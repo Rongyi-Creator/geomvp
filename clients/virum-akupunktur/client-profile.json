@@ -1,6 +1,7 @@
 {
   "id": "virum",
   "name": "Virum Akupunktur",
+  "preferredLanguage": "zh",
   "domain": "virumakupunktur.dk",
   "address": {
     "street": "Dalstrøget 78, 4",
