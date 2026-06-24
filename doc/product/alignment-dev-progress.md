@@ -51,54 +51,15 @@ timeout 提至 60s（同步会阻塞 20-60s）。涉及文件：
 **下一步验证**：GitHub Actions 手动触发（带 force），预期 Krak/GuleSider/Facebook/Trustpilot
 不再 `results.find` 报错，Google 不再超时。本地无法测（`.env.local` 无 OUTSCRAPER_API_KEY，仅 CI secret 有）。
 
-## 待实现：客户 Dashboard UX 改进
+## ✅ 已完成：客户 Dashboard UX 改进
 
-### 核心决策
-**去掉客户视角顶部的 `renderGeoHealthScoreCard` 面板**（ops 专用），只保留 Layer 3 里的圆环设计。理由：顶部面板缺乏上下文，客户看到"F"会误以为是我们的服务质量差；Layer 3 圆环面板与平台状态 + 行动建议一起出现，归因自然清晰。
+**核心决策**：客户视角去掉顶部 `renderGeoHealthScoreCard`（ops 专用），只留 Layer 3 圆环。客户看"F"会误以为是我们服务差；圆环和平台状态+行动建议一起出现归因更清晰。
 
-### 具体改动（`edge/dashboard/src/worker.ts`）
+- 客户视角不调用 `renderGeoHealthScoreCard`（worker.ts ~1966 只有 renderClientLayer3）— commit `4c96341` 已完成
+- `renderClientLayer3` 圆环重设计（grade 字母左 | 三圆环右，120px r=46 circ=289，背景 #334155，`score/max` 格式，归因标签）— commit `4c96341` 已完成
+- **NAP 诚实处理**（2026-06-24, commit `85a6057`）：Google 没找到时 consistency 结构性=0 属"未测量"非"错误"，NAP 圆环改灰 `—` + "Afventer Google-profil"，不显示血红 0/40。判定条件 `consistency===0 && googleStatus!=='ok'`。ops 视角保留原始数字。
 
-**1. 移除客户 HTML 模板里的顶部面板**
-```typescript
-// 在 client view HTML 模板里，删除这一行（约第 1912 行）：
-${renderGeoHealthScoreCard(alignReport)}
-// 保留 ops view 里的调用不变（约第 1954 行）
-```
-
-**2. 重设计 Layer 3 圆环卡片（`renderClientLayer3`）**
-
-布局：grade 字母（左）| 三个圆环（右），水平并排
-
-圆环改动：
-- 数字格式改为 `0/40`、`0/40`、`10/20`（带总分）
-- SVG 放大：`120px`，r=46，circumference ≈ 289
-- 圆环背景轨道颜色改为 `#334155`（比 #1e293b 更可见）
-- 间距拉开：`gap:40px`
-- 归因标签：Signalkvalitet 下方加 `✓ Sat af os`，另两项加 `Du kan forbedre`
-
-**3. 圆环 SVG 参考代码（r=46）**
-```typescript
-const circ = 289.0; // 2π×46
-// stroke-dasharray="${circ}" stroke-dashoffset="${(circ*(1-pct)).toFixed(1)}"
-// background track: stroke="#334155"
-// score text: "${score}/${max}"（两行或斜杠格式）
-```
-
-### 恢复指令（新 session）
-```
-继续 client dashboard UX 改进。文件：edge/dashboard/src/worker.ts
-任务：
-1. 删除 client HTML 模板里的 renderGeoHealthScoreCard 调用（约1912行，保留ops的约1954行）
-2. 重设计 renderClientLayer3 圆环：
-   - grade 字母左侧 | 三圆环右侧（flex row，gap:40px）
-   - 圆环 SVG 120px，r=46，circ=289
-   - 背景轨道 stroke="#334155"
-   - 数字显示 "0/40" 格式
-   - 归因标签：Signalkvalitet → "✓ Sat af os"，其余 → "Du kan forbedre"
-3. pnpm tsc --noEmit && pnpm wrangler deploy
-4. commit + push origin main
-详见 doc/product/alignment-dev-progress.md
-```
+**待办**：worker 改动已 commit+push，但 `wrangler deploy` 被权限拦截（生产部署）。需手动跑 `cd edge/dashboard && npx wrangler deploy` 上线（或在会话里 `! npx wrangler deploy`）。
 
 ## 代码审查剩余问题（已知，暂缓）
 
