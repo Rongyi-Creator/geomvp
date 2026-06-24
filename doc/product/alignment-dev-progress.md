@@ -23,6 +23,25 @@
 - 客户 magic link 可访问：`https://dashboard.foundbyai.dk/?view=client&client=virum&token=45faa895e5589237b2be4c2451c688b8`
 - Worker 最新版本：`917d204d`（已部署 dashboard.foundbyai.dk）
 
+## 🔴 根因已找到：score 卡 10/100 的真凶（2026-06-24）
+
+**症状**：所有平台 ❌ 空白（无 error），Outscraper Usage History 显示有调用但 $0 扣费。
+
+**根因**：Outscraper API 的 `async` 参数**默认 `true`**。异步模式下响应体是
+`{ id, status:"Pending", results_location }` —— 不含数据。代码解析 `data.data?.[0] ?? []`
+→ `undefined ?? []` → 空数组 → 无匹配 → `exists:false`；且 `resp.ok===true` 所以不写 error。
+完美解释"全 ❌ 无报错 + 调用已发出但 $0"（异步排队未取结果）。
+
+**修复**：所有 Outscraper 调用加 `async: 'false'`（同步保持连接直到拿到结果），
+timeout 提至 60s（同步会阻塞 20-60s）。涉及文件：
+- `platforms/google.ts`（maps/search）
+- `platforms/krak.ts` / `gulesider.ts` / `facebook.ts`（google-search）
+- `platforms/trustpilot.ts`：直连 dk.trustpilot.com 稳定 403，改用 Outscraper Google Search
+  `site:trustpilot.com "name"`（rating/reviewCount 拿不到 → null，但不计分）
+
+**下一步验证**：GitHub Actions 手动触发（带 force），预期 Google/Krak/GuleSider/Facebook
+不再全空，score 显著上升。本地无法测（`.env.local` 无 OUTSCRAPER_API_KEY，仅 CI secret 有）。
+
 ## 待实现：客户 Dashboard UX 改进
 
 ### 核心决策
@@ -76,9 +95,9 @@ const circ = 289.0; // 2π×46
 
 | 优先级 | 问题 | 处理时机 |
 |---|---|---|
-| HIGH | Krak/GuleSider scraper 字段索引错位 | 首次真实运行后看 HTML 结构再修 |
-| HIGH | Scraper 误报"不存在"（403/consent wall） | 同上 |
-| MEDIUM | Outscraper fetch 无 timeout | 下次迭代 |
+| ✅ FIXED | Krak/GuleSider/Facebook/Trustpilot 全改 Outscraper Google Search | 2026-06-24 |
+| ✅ FIXED | Scraper 误报"不存在"（async=true 真凶，见上） | 2026-06-24 |
+| ✅ FIXED | Outscraper fetch 无 timeout（已加 60s） | 2026-06-24 |
 | MEDIUM | Email 失败导致整个 run 失败 | 下次迭代 |
 
 ## 环境信息

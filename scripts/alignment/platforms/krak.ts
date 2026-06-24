@@ -6,12 +6,12 @@ export async function checkKrak(client: ClientProfile): Promise<KrakResult> {
   if (!apiKey) return { exists: false, name: null, address: null, phone: null, listingUrl: null, error: 'OUTSCRAPER_API_KEY not set' };
 
   const query = `site:krak.dk "${client.name}"`;
-  const params = new URLSearchParams({ query, limit: '3', language: 'da' });
+  const params = new URLSearchParams({ query, limit: '3', language: 'da', async: 'false' });
 
   try {
     const resp = await fetch(`https://api.outscraper.com/google-search?${params}`, {
       headers: { 'X-API-KEY': apiKey },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(60000), // sync request holds connection until results ready
     });
 
     if (!resp.ok) return { exists: false, name: null, address: null, phone: null, listingUrl: null, error: `Outscraper ${resp.status}` };

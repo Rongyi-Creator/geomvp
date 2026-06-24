@@ -1,51 +1,30 @@
 import type { ClientProfile, TrustpilotResult } from '../types.js';
 
+// Direct fetch to dk.trustpilot.com reliably 403s (bot protection).
+// Locate the review page via Outscraper Google Search instead.
+// ponytail: rating/reviewCount need the page HTML we can't fetch — left null, not scored
 export async function checkTrustpilot(client: ClientProfile): Promise<TrustpilotResult> {
-  const profileUrl = `https://dk.trustpilot.com/review/${client.domain}`;
+  const apiKey = process.env.OUTSCRAPER_API_KEY;
+  if (!apiKey) return { exists: false, claimed: false, rating: null, reviewCount: null, profileUrl: null, error: 'OUTSCRAPER_API_KEY not set' };
+
+  const query = `site:trustpilot.com "${client.name}"`;
+  const params = new URLSearchParams({ query, limit: '3', language: 'da', async: 'false' });
 
   try {
-    const resp = await fetch(profileUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FoundByAI-AlignmentCheck/1.0)' },
-      signal: AbortSignal.timeout(10000),
+    const resp = await fetch(`https://api.outscraper.com/google-search?${params}`, {
+      headers: { 'X-API-KEY': apiKey },
+      signal: AbortSignal.timeout(60000), // sync request holds connection until results ready
     });
 
-    if (resp.status === 404) {
-      return { exists: false, claimed: false, rating: null, reviewCount: null, profileUrl: null };
-    }
+    if (!resp.ok) return { exists: false, claimed: false, rating: null, reviewCount: null, profileUrl: null, error: `Outscraper ${resp.status}` };
 
-    if (!resp.ok) {
-      return { exists: false, claimed: false, rating: null, reviewCount: null, profileUrl: null, error: `HTTP ${resp.status}` };
-    }
+    const data = await resp.json() as { data?: Array<Array<{ link?: string; title?: string }>> };
+    const results = data.data?.[0] ?? [];
 
-    const html = await resp.text();
+    const match = results.find(r => r.link?.includes('trustpilot.com/review/'));
+    if (!match?.link) return { exists: false, claimed: false, rating: null, reviewCount: null, profileUrl: null };
 
-    // Extract rating from JSON-LD
-    let rating: number | null = null;
-    let reviewCount: number | null = null;
-    const jsonLdMatch = html.match(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g);
-    if (jsonLdMatch) {
-      for (const block of jsonLdMatch) {
-        try {
-          const inner = block.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
-          const parsed = JSON.parse(inner);
-          if (parsed.aggregateRating) {
-            rating = parseFloat(parsed.aggregateRating.ratingValue) || null;
-            reviewCount = parseInt(parsed.aggregateRating.reviewCount) || null;
-            break;
-          }
-        } catch { /* skip malformed JSON-LD */ }
-      }
-    }
-
-    // Fallback: data-rating attribute
-    if (rating === null) {
-      const ratingMatch = html.match(/data-rating-value="([\d.]+)"/);
-      if (ratingMatch) rating = parseFloat(ratingMatch[1]);
-    }
-
-    const claimed = html.includes('Verified company') || html.includes('Verificeret virksomhed');
-
-    return { exists: true, claimed, rating, reviewCount, profileUrl };
+    return { exists: true, claimed: false, rating: null, reviewCount: null, profileUrl: match.link };
   } catch (e) {
     return { exists: false, claimed: false, rating: null, reviewCount: null, profileUrl: null, error: String(e) };
   }

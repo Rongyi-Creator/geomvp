@@ -13,11 +13,13 @@ export async function checkGoogle(client: ClientProfile): Promise<GoogleResult> 
     query,
     limit: '3',
     language: 'da',
+    async: 'false', // CRITICAL: Outscraper defaults async=true → returns {status:Pending} not data
     fields: 'name,full_address,phone,rating,reviews,working_hours,place_id,google_id,site',
   });
 
   const resp = await fetch(`https://api.outscraper.com/maps/search?${params}`, {
     headers: { 'X-API-KEY': apiKey },
+    signal: AbortSignal.timeout(60000), // sync request holds connection until results ready
   });
 
   if (!resp.ok) {

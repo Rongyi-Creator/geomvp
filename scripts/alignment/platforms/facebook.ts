@@ -9,12 +9,12 @@ export async function checkFacebook(client: ClientProfile): Promise<FacebookResu
   }
 
   const query = `site:facebook.com "${client.name}"`;
-  const params = new URLSearchParams({ query, limit: '3', language: 'da' });
+  const params = new URLSearchParams({ query, limit: '3', language: 'da', async: 'false' });
 
   try {
     const resp = await fetch(`https://api.outscraper.com/google-search?${params}`, {
       headers: { 'X-API-KEY': apiKey },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(60000), // sync request holds connection until results ready
     });
 
     if (!resp.ok) {
