@@ -42,12 +42,23 @@ export async function outscraperRequest(
 }
 
 // Convenience for /google-search: returns the organic_results of the first query.
+// Retries once — Outscraper's per-account queue is sometimes congested and a poll
+// can time out even though the same query succeeds on a fresh submit (this is what
+// made De Gule Sider intermittently show "Kunne ikke kontrolleres").
 export async function googleSearch(
   query: string,
   opts?: { limit?: string; language?: string },
 ): Promise<Array<{ link?: string; title?: string; description?: string }>> {
-  const data = await outscraperRequest('/google-search', {
-    query, limit: opts?.limit ?? '3', language: opts?.language ?? 'da',
-  });
-  return (data[0] as { organic_results?: Array<{ link?: string; title?: string; description?: string }> })?.organic_results ?? [];
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const data = await outscraperRequest('/google-search', {
+        query, limit: opts?.limit ?? '3', language: opts?.language ?? 'da',
+      });
+      return (data[0] as { organic_results?: Array<{ link?: string; title?: string; description?: string }> })?.organic_results ?? [];
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr;
 }
