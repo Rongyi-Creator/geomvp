@@ -59,16 +59,59 @@ timeout 提至 60s（同步会阻塞 20-60s）。涉及文件：
 - `renderClientLayer3` 圆环重设计（grade 字母左 | 三圆环右，120px r=46 circ=289，背景 #334155，`score/max` 格式，归因标签）— commit `4c96341` 已完成
 - **NAP 诚实处理**（2026-06-24, commit `85a6057`）：Google 没找到时 consistency 结构性=0 属"未测量"非"错误"，NAP 圆环改灰 `—` + "Afventer Google-profil"，不显示血红 0/40。判定条件 `consistency===0 && googleStatus!=='ok'`。ops 视角保留原始数字。
 
-**待办**：worker 改动已 commit+push，但 `wrangler deploy` 被权限拦截（生产部署）。需手动跑 `cd edge/dashboard && npx wrangler deploy` 上线（或在会话里 `! npx wrangler deploy`）。
+**已部署**：worker 改动已上线（用户手动 `wrangler deploy`），NAP 圆环已显示灰色 `—` + "Afventer Google-profil"。
 
-## 代码审查剩余问题（已知，暂缓）
+## 对齐系统现状与设计结论（2026-06-24 定稿）
+
+### 当前真实状态（virum，score 25/F）
+| 平台 | 覆盖度(存在) | NAP一致性 | 说明 |
+|---|---|---|---|
+| Google Maps | ❌ 没找到 | — | 实测 4 种查询全 0 条 → 这家店**确实没有 GBP**，非 bug |
+| Trustpilot | ✅ 自动 | 读不到 | 仅确认存在；rating 需页面 HTML（被 403） |
+| Krak.dk | ✅ 自动 | 读不到 | 仅确认存在；文案已从误导的"Fundet og korrekt"改"Profil fundet"（下次跑生效） |
+| De Gule Sider | ✅ 自动(偶超时) | 读不到 | 超时是 Outscraper 队列拥塞，非读不到；已加 1 次重试 |
+| Facebook | ✅ 自动 | 需人工 | 匹配已收紧到主页根 URL，排除 posts/groups/profile |
+| 网站 GEO Layer | ✅ | n/a | JSON-LD 等技术信号 |
+
+score 25 是**数据正确**的结果，不是系统故障。没 GBP → 丢 15 分覆盖 + NAP 整段无数据（结构性 0/40）→ 天花板 60。
+
+### 核心设计结论：对齐系统测两件不同的事
+- **覆盖度（是否存在）**：5 个平台全能自动测，都是丹麦本地 AI 真实引用源。"你没在 X 注册→去建"准确可执行。**所有平台都该留。**
+- **NAP 一致性**：权威数据**只有 Google Maps 能给**。其余平台只确认存在、不读 NAP。这没问题——Google 是 AI 最信任的 NAP 源，且客户头号待办本就是建 GBP（建了 NAP 自然可测）。
+
+→ **判定：不移除任何平台。** De Gule Sider / Facebook 留的理由是"覆盖度"，不是"NAP一致性"。
+
+### 不做：从 google-search 摘要提取 NAP（snippet 解析）
+即使目录站摘要含地址电话，解析也脆弱（格式不一、Google 截断）、边际价值低（客户根本修复是建 GBP）、多一摊维护。YAGNI——等真遇到"有目录收录但 NAP 对不上、又没 GBP"的客户再说。
+
+### 已做的两个可靠性补丁（commit `d6cff6a`）
+- **google-search 重试 1 次**：Outscraper 单账号队列偶发轮询超时（实测能堵 6 分钟+），重试一次基本解决 De Gule Sider 闪断。
+- **Facebook 匹配收紧**：`site:facebook.com` 会命中任何提到店名的帖子/群组/个人页，现在只认主页根 URL（带 `--selftest` 自检）。
+
+## 代码审查剩余问题
 
 | 优先级 | 问题 | 处理时机 |
 |---|---|---|
-| ✅ FIXED | Krak/GuleSider/Facebook/Trustpilot 全改 Outscraper Google Search | 2026-06-24 |
-| ✅ FIXED | Scraper 误报"不存在"（async=true 真凶，见上） | 2026-06-24 |
-| ✅ FIXED | Outscraper fetch 无 timeout（已加 60s） | 2026-06-24 |
+| ✅ FIXED | async=true 真凶（全平台静默空结果） | 2026-06-24 |
+| ✅ FIXED | google-search 解析路径（`data[0].organic_results`） | 2026-06-24 |
+| ✅ FIXED | Outscraper 超时 / 改异步 submit→poll（180s） | 2026-06-24 |
+| ✅ FIXED | De Gule Sider 队列超时（加重试） | 2026-06-24 |
+| ✅ FIXED | Facebook 低精度匹配（收紧主页根） | 2026-06-24 |
+| ✅ FIXED | Krak/GuleSider 误导文案"Fundet og korrekt" | 2026-06-24（下次跑生效） |
 | MEDIUM | Email 失败导致整个 run 失败 | 下次迭代 |
+| LOW | Trustpilot rating/reviewCount 拿不到（403） | 不计分，暂不处理 |
+
+## 专门做 NAP 的 API 调研（2026-06）
+对"跨目录抓 NAP 值并比对"，市面专用工具：
+- **BrightLocal** Citation Tracker — 有 API，~CAD $40–100/月，审计+报告强，agency/SMB 取向。**起步项目最合适的候选**。
+- **Whitespark** Local Citation Finder — 有 API，$33–149/月；一次性 citation 清理 $20–999。
+- **Yext** — 企业级 listings 平台，$5000+/起，**对起步项目过重**。
+- **Google Places Details API** — 只给 Google 的 NAP，而这块我们已用 Outscraper 拿到，无增量。
+
+**关键caveat**：以上 BrightLocal/Whitespark 是北美/CA 取向，对丹麦本地目录（Krak、degulesider）覆盖**未必深**。对一个丹麦市场的起步项目，专用 NAP API 的增量价值进一步打折。
+**结论：现阶段不上专用 NAP API。** 继续用 Outscraper（Google 权威 NAP + 目录存在性）。等"跨目录 NAP 一致性"成为卖点、且客户量支撑订阅成本时，再评估 BrightLocal（先验证其 DK 目录覆盖）。
+
+## 环境信息
 
 ## 环境信息
 
