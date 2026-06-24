@@ -11,12 +11,12 @@ The alignment feature has a **critical multi-tenant isolation failure**: the per
 
 | Sev | Location | Description | Fix |
 |-----|----------|-------------|-----|
-| CRITICAL | `worker.ts:1135-1190`, `1677-1731` | Tenant isolation bypass / IDOR. Any authenticated client can read/write all other clients' KV data via `?view=client&client=<self>` + path `clientId`. | Require ops Bearer for all `/api/*` writes; for client view, gate to matching clientId only. |
-| CRITICAL | `worker.ts:1681-1690` | Write-before-validate. Raw body written to KV before fields checked → `{}` persists, dashboard 500s on render. Exploitable cross-tenant via IDOR. | Validate required fields before `put`. Make render functions defensive against missing `score`. |
-| HIGH | `scoring.ts:28-34`, `compare-nap.ts:41-47` | Missing/unparseable NAP comparisons score as perfect consistency (40/40). Claude outage silently inflates score. | Treat "no data" as 0 or exclude from denominator; propagate parse failure explicitly. |
-| HIGH | `krak.ts:29-43`, `gulesider.ts:32-41` | Field correlation by array index. Cards missing a field desync arrays → wrong address/phone attached to wrong company. | Parse per-card (extract fields within each card container), not flat array correlation. |
-| HIGH | `krak.ts:26-46`, `gulesider.ts:25-44` | Scraper fragility → false "missing". JS-rendered / consent-walled pages return 200 with no matches → `exists:false`, client told to create a profile they already have. | Detect block/consent pages → report `unable_to_check`; validate selectors against live HTML. |
-| HIGH | `update-geo-layer.ts:17-20` | Overwrites `sameAs` wholesale. Transient `unable_to_check` drops previously verified URLs — violates CLAUDE.md "保留所有外部链接". | Union with existing `sameAs`; only remove on definitive negative, never on transient failure. |
+| ~~CRITICAL~~ ✅ | `worker.ts` | ~~Tenant isolation bypass / IDOR.~~ Fixed: `checkAuth` returns `AuthIdentity`; POST ops-only; GET enforces clientId match; `client` param validated `^[a-z0-9-]+$`. | commit `34cbd51` |
+| ~~CRITICAL~~ ✅ | `worker.ts` | ~~Write-before-validate.~~ Fixed: validation before KV write; score bounds checked; `renderGeoHealthScoreCard` guards missing score; history deduped by date. | commit `34cbd51` |
+| ~~HIGH~~ ✅ | `scoring.ts` | ~~Missing NAP comparisons score as perfect (40/40).~~ Fixed: empty comparisons skipped (score += 0, not += max). | commit `34cbd51` |
+| HIGH | `krak.ts:29-43`, `gulesider.ts:32-41` | Field correlation by array index. Cards missing a field desync arrays → wrong address/phone attached to wrong company. | Fix after first real run (need live HTML). |
+| HIGH | `krak.ts:26-46`, `gulesider.ts:25-44` | Scraper fragility → false "missing". JS-rendered / consent-walled pages return 200 with no matches → `exists:false`. | Fix after first real run (need live HTML). |
+| ~~HIGH~~ ✅ | `update-geo-layer.ts` | ~~Overwrites `sameAs` wholesale.~~ Fixed: union merge — never removes URLs on transient failure. | commit `34cbd51` |
 | MEDIUM | `worker.ts:1683-1689` | History append: non-atomic read-modify-write, no dedup → duplicate same-day entries possible. | Guard with idempotency on `date`; dedup before writing. |
 | MEDIUM | `worker.ts:1682-1690`, `1469-1500` | No server-side score clamping. POST body `score.total` stored and rendered as-is (can be >100 or negative via IDOR). | Clamp/validate score server-side before storing. |
 | MEDIUM | `compare-nap.ts:40` | `response.content[0].type` accessed outside try/catch; throws uncaught if `content` is empty. | Guard `response.content?.[0]`; default to `[]`. |
