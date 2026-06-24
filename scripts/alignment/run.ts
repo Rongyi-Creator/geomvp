@@ -81,6 +81,18 @@ async function main() {
   // Step 1: detect platforms
   const checkResult = await runAlignmentCheck(client);
 
+  // Guard: if infra errors (Outscraper timeout/API failure) hit most platforms, the
+  // score is meaningless. Don't clobber the client's dashboard or email them a fake
+  // low score — fail the run so CI/Slack alert ops instead. A legit "not found"
+  // (exists:false, no error) is real data and does NOT count here.
+  const ext = ['google', 'trustpilot', 'krak', 'guleSider', 'facebook'] as const;
+  const platforms = checkResult.platforms as Record<string, { error?: string }>;
+  const infraErrors = ext.filter(k => platforms[k]?.error);
+  if (infraErrors.length >= 3) {
+    console.error(`[alignment] Degraded run — ${infraErrors.length}/5 platforms failed with infra errors (${infraErrors.join(', ')}). Skipping dashboard push to avoid publishing a misleading score.`);
+    process.exit(1);
+  }
+
   // Step 2: NAP comparison via Claude
   const comparisons = await compareNap(client, checkResult);
   console.log(`[alignment] NAP comparisons: ${comparisons.length} fields checked`);
