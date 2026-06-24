@@ -996,7 +996,7 @@ async function renderClientFunnel(env: Env, days: number, config: ClientConfig):
 </div>
 <div class="card">
   <h3>AI Bot Visits Per Day</h3>
-  <div style="font-size:12px;color:#64748b;margin-bottom:8px">Completed days only · refreshes every ~5 min</div>
+  <div style="font-size:12px;color:#64748b;margin-bottom:8px">Completed days only · updates daily at 02:00 CET · refreshes every ~5 min</div>
   ${lineSeries.length > 0 ? svgLineChart(lineSeries, xLabels, 800, 240, activationIdx, true) : '<div class="empty">Data will appear once AI bots start visiting</div>'}
 </div>
 <div class="data-source">Data source: Cloudflare Analytics Engine (third-party infrastructure) · Each data point = one verified HTTP request</div>

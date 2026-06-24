@@ -1,51 +1,30 @@
 import type { ClientProfile, KrakResult } from '../types.js';
-import { nameMatches } from '../normalize.js';
 
+// Uses Outscraper Google Search (site:krak.dk) to bypass 403 bot protection
 export async function checkKrak(client: ClientProfile): Promise<KrakResult> {
-  const searchUrl = `https://www.krak.dk/søg?what=${encodeURIComponent(client.name)}&where=${encodeURIComponent(client.address.city)}`;
+  const apiKey = process.env.OUTSCRAPER_API_KEY;
+  if (!apiKey) return { exists: false, name: null, address: null, phone: null, listingUrl: null, error: 'OUTSCRAPER_API_KEY not set' };
+
+  const query = `site:krak.dk "${client.name}" "${client.address.city}"`;
+  const params = new URLSearchParams({ query, limit: '3', language: 'da' });
 
   try {
-    // Rate limit courtesy: caller should ensure ≥2s between Krak/GuleSider requests
-    const resp = await fetch(searchUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FoundByAI-AlignmentCheck/1.0)' },
-      signal: AbortSignal.timeout(12000),
+    const resp = await fetch(`https://api.outscraper.com/google-search?${params}`, {
+      headers: { 'X-API-KEY': apiKey },
+      signal: AbortSignal.timeout(15000),
     });
 
-    if (!resp.ok) {
-      if (resp.status === 429) return { exists: false, name: null, address: null, phone: null, listingUrl: null, error: 'rate_limited' };
-      return { exists: false, name: null, address: null, phone: null, listingUrl: null, error: `HTTP ${resp.status}` };
-    }
+    if (!resp.ok) return { exists: false, name: null, address: null, phone: null, listingUrl: null, error: `Outscraper ${resp.status}` };
 
-    const html = await resp.text();
-    return parseKrakResults(html, client, searchUrl);
+    const data = await resp.json() as { data?: Array<Array<{ link?: string; title?: string; snippet?: string }>> };
+    const results = data.data?.[0] ?? [];
+
+    const match = results.find(r => r.link?.includes('krak.dk'));
+    if (!match?.link) return { exists: false, name: null, address: null, phone: null, listingUrl: null };
+
+    // ponytail: NAP extracted from snippet only — Krak blocks direct scraping
+    return { exists: true, name: match.title ?? null, address: null, phone: null, listingUrl: match.link };
   } catch (e) {
     return { exists: false, name: null, address: null, phone: null, listingUrl: null, error: String(e) };
   }
-}
-
-function parseKrakResults(html: string, client: ClientProfile, _searchUrl: string): KrakResult {
-  // Extract company name, address, phone from search result cards
-  // Krak renders: <span class="hit-name">...</span> <span class="hit-address">...</span>
-  const nameMatches2: RegExpMatchArray[] = [...html.matchAll(/<[^>]+class="[^"]*hit-name[^"]*"[^>]*>([\s\S]*?)<\/[^>]+>/gi)];
-  const addressMatches: RegExpMatchArray[] = [...html.matchAll(/<[^>]+class="[^"]*hit-address[^"]*"[^>]*>([\s\S]*?)<\/[^>]+>/gi)];
-  const phoneMatches: RegExpMatchArray[] = [...html.matchAll(/<[^>]+class="[^"]*hit-phone[^"]*"[^>]*>([\s\S]*?)<\/[^>]+>/gi)];
-  const hrefMatches: RegExpMatchArray[] = [...html.matchAll(/href="(\/firma\/[^"]+)"/gi)];
-
-  for (let i = 0; i < nameMatches2.length; i++) {
-    const rawName = stripTags(nameMatches2[i]?.[1] ?? '').trim();
-    if (!rawName || !nameMatches(rawName, client.name)) continue;
-
-    const address = stripTags(addressMatches[i]?.[1] ?? '').trim() || null;
-    const phone = stripTags(phoneMatches[i]?.[1] ?? '').trim() || null;
-    const href = hrefMatches[i]?.[1] ?? null;
-    const listingUrl = href ? `https://www.krak.dk${href}` : null;
-
-    return { exists: true, name: rawName, address, phone, listingUrl };
-  }
-
-  return { exists: false, name: null, address: null, phone: null, listingUrl: null };
-}
-
-function stripTags(html: string): string {
-  return html.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').trim();
 }

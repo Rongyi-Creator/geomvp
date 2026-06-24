@@ -32,8 +32,8 @@ function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparis
   }
 
   // Krak
-  if (p.krak.error === 'rate_limited') {
-    statuses.push(ps('krak', 'unable_to_check', 'Midlertidigt utilgængelig', []));
+  if (p.krak.error) {
+    statuses.push(ps('krak', 'unable_to_check', 'Kunne ikke kontrolleres automatisk', []));
   } else if (!p.krak.exists) {
     statuses.push(ps('krak', 'missing', 'Ikke fundet på Krak.dk', []));
   } else {
@@ -42,8 +42,8 @@ function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparis
   }
 
   // De Gule Sider
-  if (p.guleSider.error === 'rate_limited') {
-    statuses.push(ps('guleSider', 'unable_to_check', 'Midlertidigt utilgængelig', []));
+  if (p.guleSider.error) {
+    statuses.push(ps('guleSider', 'unable_to_check', 'Kunne ikke kontrolleres automatisk', []));
   } else if (!p.guleSider.exists) {
     statuses.push(ps('guleSider', 'missing', 'Ikke fundet på De Gule Sider', []));
   } else {

@@ -13,7 +13,8 @@ export { PLATFORM_WEIGHTS };
 function calcCoverageScore(r: AlignmentCheckResult): number {
   let score = 0;
   for (const w of PLATFORM_WEIGHTS) {
-    const p = (r.platforms as Record<string, { exists?: boolean; claimed?: boolean }>)[w.platform];
+    const p = (r.platforms as Record<string, { exists?: boolean; claimed?: boolean; error?: string }>)[w.platform];
+    if (p?.error) continue; // scraper blocked/failed — treat as unknown, not missing
     if (!p?.exists) continue;
     score += (p.claimed !== false) ? w.claimedPoints : w.existsPoints;
   }
