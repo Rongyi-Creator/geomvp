@@ -1,5 +1,6 @@
 import type { ClientProfile, FacebookResult } from '../types.js';
 import { googleSearch } from '../outscraper.js';
+import { nameMatches } from '../normalize.js';
 
 // A site:facebook.com search matches any post/group/event mentioning the name, not
 // just the official Business page. Accept only page-root URLs (facebook.com/<slug>
@@ -24,7 +25,7 @@ export async function checkFacebook(client: ClientProfile): Promise<FacebookResu
   const empty: FacebookResult = { exists: false, pageUrl: null, name: null, napStatus: 'not_found' };
   try {
     const results = await googleSearch(`site:facebook.com "${client.name}"`);
-    const match = results.find(r => r.link && isFacebookPage(r.link));
+    const match = results.find(r => r.link && isFacebookPage(r.link) && nameMatches(r.title ?? '', client.name));
     if (!match?.link) return empty;
     return {
       exists: true,

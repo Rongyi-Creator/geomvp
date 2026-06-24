@@ -8,7 +8,10 @@ export async function checkTrustpilot(client: ClientProfile): Promise<Trustpilot
   const empty: TrustpilotResult = { exists: false, claimed: false, rating: null, reviewCount: null, profileUrl: null };
   try {
     const results = await googleSearch(`site:trustpilot.com "${client.name}"`);
-    const match = results.find(r => r.link?.includes('trustpilot.com/review/'));
+    // Trustpilot review URLs are .../review/<domain> — require the client's own domain
+    // so we don't match another company's review page that merely mentions the name.
+    const domain = client.domain.replace(/^www\./, '').toLowerCase();
+    const match = results.find(r => r.link?.toLowerCase().includes(`/review/${domain}`));
     if (!match?.link) return empty;
     return { exists: true, claimed: false, rating: null, reviewCount: null, profileUrl: match.link };
   } catch (e) {
