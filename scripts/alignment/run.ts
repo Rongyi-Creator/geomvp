@@ -12,7 +12,7 @@ import { generateReport } from './generate-report.js';
 import { updateGeoLayer } from './update-geo-layer.js';
 import { sendNotificationEmail } from './send-email.js';
 import { fetchOverrides, applyOverrides } from './overrides.js';
-import { postVerificationTodo } from './verify-todo.js';
+import { buildTodoText } from './verify-todo.js';
 import type { ClientProfile, AlignmentReport, ScoreHistory } from './types.js';
 
 const clientId = process.argv[2] ?? 'virum';
@@ -49,6 +49,14 @@ function determineRunType(history: ScoreHistory | null): AlignmentReport['runTyp
   const daysSince  = (Date.now() - lastDate.getTime()) / 86400000;
   if (daysSince < 3) return 'day4';
   return 'biweekly';
+}
+
+async function postSlack(webhook: string, text: string): Promise<void> {
+  await fetch(webhook, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  }).catch(() => {}); // ponytail: fire-and-forget — a Slack hiccup shouldn't fail the run
 }
 
 async function fetchHistory(workerUrl: string, opsToken: string, id: string): Promise<ScoreHistory | null> {
@@ -121,19 +129,21 @@ async function main() {
   // Step 4: generate report
   const report = generateReport(checkResult, comparisons, score, runType, overrides);
 
-  // Step 4b: Slack TODO with the /verify link. A MANUAL run is a deliberate audit (often
-  // because a client says they changed something), so always hand over the verify links for
-  // all directory platforms — even already-verified ones — so they can re-confirm. day1 (new
-  // client onboarding) only asks about genuinely-unconfirmed platforms. Recurring crons stay
-  // quiet so they don't re-nag daily.
+  // Step 4b: one consolidated Slack message. Imperative (manual) vs scheduled split —
+  // a MANUAL run is a deliberate audit, so always notify with score + the verify links for
+  // all directory platforms (re-confirm even verified ones). A scheduled/day1 run only
+  // speaks when something genuinely needs verification; otherwise it stays SILENT
+  // ("no news is good news"). Failures are alerted separately by the workflow (failure()).
   const OVERRIDABLE = ['trustpilot', 'krak', 'guleSider', 'facebook'];
   const needsVerif = report.platforms.filter(p => p.status === 'needs_verification').map(p => p.id);
   const todoPlatforms = runType === 'manual'
     ? OVERRIDABLE.filter(id => report.platforms.some(p => p.id === id))
-    : runType === 'day1' ? needsVerif : [];
-  if (todoPlatforms.length && process.env.SLACK_WEBHOOK_URL && workerUrl) {
-    await postVerificationTodo(process.env.SLACK_WEBHOOK_URL, workerUrl, client, todoPlatforms);
-    console.log(`[alignment] Posted verification TODO for: ${todoPlatforms.join(', ')}`);
+    : needsVerif;
+  if (process.env.SLACK_WEBHOOK_URL && workerUrl && (runType === 'manual' || todoPlatforms.length)) {
+    let text = `:white_check_mark: Alignment for *${client.name}*: *${score.grade.grade}* (${score.total}/100) — <${workerUrl}/?view=ops|Dashboard>`;
+    if (todoPlatforms.length) text += '\n\n' + buildTodoText(workerUrl, client, todoPlatforms);
+    await postSlack(process.env.SLACK_WEBHOOK_URL, text);
+    console.log(`[alignment] Slack sent (todo: ${todoPlatforms.join(', ') || 'none'})`);
   }
 
   // Step 5: update sameAs in business.json

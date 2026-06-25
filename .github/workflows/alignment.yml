@@ -50,21 +50,16 @@ jobs:
           FLAGS="${{ inputs.force && '--force' || '' }} --no-email ${{ github.event_name == 'workflow_dispatch' && '--run-type=manual' || '' }}"
           pnpm tsx scripts/alignment/run.ts $CLIENT $FLAGS
 
-      - name: Notify Slack
-        if: always()
+      # Success/TODO messaging is owned by run.ts (one consolidated message; silent when a
+      # scheduled run has nothing actionable). This step only fires on failure — including
+      # the degraded-run guard's exit 1 — which run.ts can't report itself.
+      - name: Notify Slack on failure
+        if: failure()
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SCORE: ${{ steps.run.outputs.score }}
-          GRADE: ${{ steps.run.outputs.grade }}
-          WORKER_URL: ${{ secrets.DASHBOARD_WORKER_URL }}
           CLIENT: ${{ inputs.client || 'virum' }}
         run: |
-          STATUS="${{ job.status }}"
-          if [ "$STATUS" = "success" ]; then
-            TEXT=":white_check_mark: Alignment for *${CLIENT}*: *${GRADE}* (${SCORE}/100) — <${WORKER_URL}/?view=ops|Dashboard>"
-          else
-            TEXT=":x: Alignment check *failed* for *${CLIENT}* — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
-          fi
+          TEXT=":x: Alignment check *failed* for *${CLIENT}* — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
           curl -s -X POST "$SLACK_WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
             -d "{\"text\":\"${TEXT}\"}"
