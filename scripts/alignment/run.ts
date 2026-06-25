@@ -121,13 +121,19 @@ async function main() {
   // Step 4: generate report
   const report = generateReport(checkResult, comparisons, score, runType, overrides);
 
-  // Step 4b: Slack TODO for platforms automated detection couldn't confirm — the human
-  // verifies via the dashboard /verify page, and the verdict folds back in on the next run.
-  // Only on day1 / manual runs so recurring crons don't re-nag daily for the same platforms.
-  const pending = report.platforms.filter(p => p.status === 'needs_verification').map(p => p.id);
-  if (pending.length && (runType === 'day1' || runType === 'manual') && process.env.SLACK_WEBHOOK_URL && workerUrl) {
-    await postVerificationTodo(process.env.SLACK_WEBHOOK_URL, workerUrl, client, pending);
-    console.log(`[alignment] Posted verification TODO for: ${pending.join(', ')}`);
+  // Step 4b: Slack TODO with the /verify link. A MANUAL run is a deliberate audit (often
+  // because a client says they changed something), so always hand over the verify links for
+  // all directory platforms — even already-verified ones — so they can re-confirm. day1 (new
+  // client onboarding) only asks about genuinely-unconfirmed platforms. Recurring crons stay
+  // quiet so they don't re-nag daily.
+  const OVERRIDABLE = ['trustpilot', 'krak', 'guleSider', 'facebook'];
+  const needsVerif = report.platforms.filter(p => p.status === 'needs_verification').map(p => p.id);
+  const todoPlatforms = runType === 'manual'
+    ? OVERRIDABLE.filter(id => report.platforms.some(p => p.id === id))
+    : runType === 'day1' ? needsVerif : [];
+  if (todoPlatforms.length && process.env.SLACK_WEBHOOK_URL && workerUrl) {
+    await postVerificationTodo(process.env.SLACK_WEBHOOK_URL, workerUrl, client, todoPlatforms);
+    console.log(`[alignment] Posted verification TODO for: ${todoPlatforms.join(', ')}`);
   }
 
   // Step 5: update sameAs in business.json
