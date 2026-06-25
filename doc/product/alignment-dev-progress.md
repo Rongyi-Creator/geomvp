@@ -23,6 +23,46 @@
 - 客户 magic link 可访问：`https://dashboard.foundbyai.dk/?view=client&client=virum&token=45faa895e5589237b2be4c2451c688b8`
 - Worker 最新版本：`917d204d`（已部署 dashboard.foundbyai.dk）
 
+## ✅ 对齐系统 v2：混合检测（slice 1+2）已完成并上线（2026-06-25）
+
+**背景**：自动检测耦合 Google 排名 → 对"薄/新"页面有系统性盲区。实测 Trustpilot 误报：
+Virum 真有 0-review profile（`dk.trustpilot.com/review/virumakupunktur.dk`），但 `site:` 搜索（名字甚至域名）
+都捞不到 → 假报"无 profil"。结论：自动层测"覆盖度"，但不能 100% 确认"不存在"。
+
+### Slice 1（commit `a32201b`）— 自动层优化 + 诚实第三态
+- Trustpilot 改**域名检索** `site:trustpilot.com <domain>`，匹配 `/review/<domain>`（www 不敏感，带 selftest）。杀重名 + 对齐 Trustpilot 索引方式。
+- 新增 `needs_verification` 状态：4 个 scrape 平台（TP/Krak/GuleSider/FB）自动查不到 → **不再红色"missing/去创建"**，改灰色 🔍 "Afventer manuel bekræftelse"（查不到≠不存在）。scoring 不变（0 覆盖，同 missing）。
+- worker 渲染灰色 🔍。验证 green：run `28155236619`，🔍×4 上线。
+
+### Slice 2（commit `7022a1f` + 修复 `7235256`）— 人工审核闭环
+- **Slack TODO**（`verify-todo.ts`）：仅 day1/manual run 触发（recurring 不 nag）。每平台给"去查"直链（TP 确定性 URL / FB pages 搜索 / Krak·GuleSider 用 google site: 搜索）+ 期望 NAP（名/电话/地址）+ `/verify?client=` 链接。
+- **override 存储**（`overrides.ts` + KV `alignment_override:<client>`）：run 开始拉取，applyOverrides 把 exists 改写 → coverage 计分（exists/differs→true，missing→false）。带 selftest。
+- **worker /verify 页**（ops only，GET 无副作用→防 Slack 预取误提交）：每平台 3 个 button-form（✓Findes/✗Findes ikke/⚠Afviger），**点击即存**（无独立提交键），POST `/api/verify/<client>/<platform>` 写 KV。
+- **dashboard 实时反映**（修复 `7235256`）：`loadAlignmentReport` 在渲染时合并 override（状态+coverage+grade），**镜像 run 的算分逻辑**→ 标注后刷新即见，且与下次 run 数值一致不闪烁（只对仍 needs_verification 的平台计分，幂等不重复计）。
+- workflow：run step 加 `SLACK_WEBHOOK_URL`；manual dispatch → `--run-type=manual`。
+
+### 端到端验证通过（run `28157762805`，manual）
+人工在 /verify 标注 4 平台 → "Applied 4 manual override(s)" → Trustpilot 确认 findes(+5)、其余 3 个 findes ikke(0) →
+**score 10→15/F** 写回 dashboard。dashboard 实时显示：TP ✅"Bekræftet manuelt — profil findes"、其余 ❌"ikke registreret"、Google 灰。
+此时 4 平台全已 verified → 无 pending → **不再推 TODO（正常）**，只推结果。
+
+### 重新跑通整条流程（TODO→verify→结果）的方法
+已 verified 的平台不会再触发 TODO。要重测全链路需先**清掉 override**让平台回到 needs_verification：
+```
+# 从 edge/dashboard 目录（清除 virum 的人工标注）
+wrangler kv key delete "alignment_override:virum" --binding=DASHBOARD_KV --remote
+# 然后：
+gh workflow run alignment.yml -f client=virum -f force=true   # manual → 推 TODO（4 平台）
+#   → 打开 Slack TODO → 点 /verify?client=virum 链接逐个标注
+#   → 再 gh workflow run 同样命令 → 推结果（score 反映标注）+ dashboard link
+```
+（说明：第一次 run 推 TODO，标注后第二次 run 推结果；若标注未尽则 TODO 列剩余项。）
+
+### 未做（YAGNI）
+- 精确 NAP 值录入（只做 exists/missing/differs 粗粒度，"differs"打标即可）。
+- Google Places API（等有 GBP 的付费客户 + Maps 仍坏再说）。
+- Trustpilot 免费 suggest 端点（域名搜索捞不到薄页时的自动捷径，待探）。
+
 ## 🔴 根因已找到：score 卡 10/100 的真凶（2026-06-24）
 
 **症状**：所有平台 ❌ 空白（无 error），Outscraper Usage History 显示有调用但 $0 扣费。
