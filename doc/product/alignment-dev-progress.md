@@ -61,19 +61,36 @@ timeout 提至 60s（同步会阻塞 20-60s）。涉及文件：
 
 **已部署**：worker 改动已上线（用户手动 `wrangler deploy`），NAP 圆环已显示灰色 `—` + "Afventer Google-profil"。
 
-## 对齐系统现状与设计结论（2026-06-24 定稿）
+## 对齐系统现状与设计结论（2026-06-25 更新）
 
-### 当前真实状态（virum，score 25/F）
-| 平台 | 覆盖度(存在) | NAP一致性 | 说明 |
-|---|---|---|---|
-| Google Maps | ❌ 没找到 | — | 实测 4 种查询全 0 条 → 这家店**确实没有 GBP**，非 bug |
-| Trustpilot | ✅ 自动 | 读不到 | 仅确认存在；rating 需页面 HTML（被 403） |
-| Krak.dk | ✅ 自动 | 读不到 | 仅确认存在；文案已从误导的"Fundet og korrekt"改"Profil fundet"（下次跑生效） |
-| De Gule Sider | ✅ 自动(偶超时) | 读不到 | 超时是 Outscraper 队列拥塞，非读不到；已加 1 次重试 |
-| Facebook | ✅ 自动 | 需人工 | 匹配已收紧到主页根 URL，排除 posts/groups/profile |
-| 网站 GEO Layer | ✅ | n/a | JSON-LD 等技术信号 |
+### ⚠️ 重大修正：之前的 25/F 是"假阳性"虚高，真实分≈10/F
+旧检测 `link.includes('krak.dk')` 会命中目录的**分类/索引页**（`krak.dk/.../firmaer`、`/kort/søg`），
+不是商家自己的 listing → Krak/GuleSider 误报 ✅。用本地 key 实测确认：
+- Krak/GuleSider 的真实 listing URL 格式是 `/<数字id>/firma`（单数）；分类页是 `/firmaer`（复数）
+- Virum Akupunktur 在 Krak/GuleSider 的 `/firma` 结果里**一个都没有**（命中的都是别家：Virum/Sorgenfri Zoneterapi、Virum Kiropraktor…）
+→ **这家店其实只有：自己网站 + 可能 Trustpilot，没有 GBP/Krak/GuleSider/FB。真实就是 F。**
 
-score 25 是**数据正确**的结果，不是系统故障。没 GBP → 丢 15 分覆盖 + NAP 整段无数据（结构性 0/40）→ 天花板 60。
+**精度修复（commit `878fd66`）**：所有目录平台改为"真实 profile URL + 名称匹配"：
+- Krak/GuleSider：要求 `/<id>/firma` + `nameMatches(title)`
+- Facebook：要求主页根 URL + `nameMatches(title)`（commit `d6cff6a` 先做了根 URL）
+- Trustpilot：要求 `/review/<客户域名>`，不只 `/review/`
+
+### 当前真实状态（virum）
+| 平台 | 检测结果 | 说明 |
+|---|---|---|
+| Google Maps | ❌ 没找到 | 实测 4 种查询全 0 条，确实没 GBP（但 CI 里常**超时**，见下） |
+| Trustpilot | ❓ | 加域名匹配后待确认是否真有 profile |
+| Krak.dk | ❌ 没找到 | 精度修复后纠正（之前 ✅ 是分类页假阳性） |
+| De Gule Sider | ❌ 没找到 | 同上 |
+| Facebook | ❌ 没找到 | 精度修复后纠正 |
+| 网站 GEO Layer | ✅ | JSON-LD 等技术信号 ≈10/20 |
+
+### 🔴 遗留未解决：Google maps/search 在 CI 里持续超时（3/3 次）
+- 现象：CI 里 `Google: ❌ Outscraper Maps error: poll timeout`，即使加了重试。
+- **账户是付费 credit 版**（用户澄清），所以**不是免费版串行/限流**——之前"队列拥塞"推断需重新核实。
+- 可能性：① 我整个下午用本地 key + 连发 3 次 CI ≈30+ jobs 把账户搞拥塞（停手后应缓解）；② maps/search 对"0 结果/难查询"处理就是慢，180s 不够；③ 轮询逻辑 bug。
+- **降级守卫已上线（commit `140045c`）**：Google 有 infra error 或 ≥3 平台报错 → 不推 dashboard、exit 1（CI 红 + Slack 告警），避免把假低分写给客户。**副作用**：Google 一直超时则每天 cron 都会 abort 不更新 → 必须先解决 Google 超时。
+- dashboard 当前显示 10/F（被一次降级 run 在守卫上线前覆盖了）；真实分也≈10，所以不算大错，但需一次干净 run 校准。
 
 ### 核心设计结论：对齐系统测两件不同的事
 - **覆盖度（是否存在）**：5 个平台全能自动测，都是丹麦本地 AI 真实引用源。"你没在 X 注册→去建"准确可执行。**所有平台都该留。**
@@ -98,8 +115,23 @@ score 25 是**数据正确**的结果，不是系统故障。没 GBP → 丢 15 
 | ✅ FIXED | De Gule Sider 队列超时（加重试） | 2026-06-24 |
 | ✅ FIXED | Facebook 低精度匹配（收紧主页根） | 2026-06-24 |
 | ✅ FIXED | Krak/GuleSider 误导文案"Fundet og korrekt" | 2026-06-24（下次跑生效） |
+| ✅ FIXED | Krak/GuleSider/FB/Trustpilot 假阳性（精度修复 `878fd66`） | 2026-06-25 |
+| ✅ FIXED | 重试移入 outscraperRequest，Google 也重试（`d43d484`） | 2026-06-25 |
+| ✅ FIXED | 降级 run 守卫（Google infra error 或 ≥3 报错 → 不推 `140045c`） | 2026-06-25 |
+| 🔴 OPEN | **Google maps/search CI 持续超时（付费账户，原因待查）** | **新窗口首要任务** |
 | MEDIUM | Email 失败导致整个 run 失败 | 下次迭代 |
 | LOW | Trustpilot rating/reviewCount 拿不到（403） | 不计分，暂不处理 |
+
+## 下一窗口恢复指令
+```
+排查 Outscraper maps/search（Google）在对齐 CI 里持续超时（付费 credit 账户，非免费版限流）。
+本地有 OUTSCRAPER_API_KEY，队列现应已 drain：
+1. 直接用本地 key 打 maps/search "Virum Akupunktur 2870 DK"（async submit→poll），测真实耗时，判断是 transient 拥塞还是 maps 本身慢/轮询 bug
+2. 若稳定可完成 → 触发一次干净 CI run（gh workflow run alignment.yml -f client=virum -f force=true），确认 Google 返回 not-found（非 timeout）、降级守卫不误触发、真实分≈10/F 写回 dashboard
+3. 若仍超时 → 考虑 maps timeout 提到 300s / 减少并发 / 联系 Outscraper
+注意：别再连发多次 CI 或本地测试，会把账户队列搞拥塞（今天的超时大概率就是这么来的）
+详见 doc/product/alignment-dev-progress.md
+```
 
 ## 专门做 NAP 的 API 调研（2026-06）
 对"跨目录抓 NAP 值并比对"，市面专用工具：
