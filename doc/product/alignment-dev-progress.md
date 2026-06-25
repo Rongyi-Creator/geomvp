@@ -37,31 +37,35 @@ Virum 真有 0-review profile（`dk.trustpilot.com/review/virumakupunktur.dk`）
 ### Slice 2（commit `7022a1f` + 修复 `7235256`）— 人工审核闭环
 - **Slack TODO**（`verify-todo.ts`）：仅 day1/manual run 触发（recurring 不 nag）。每平台给"去查"直链（TP 确定性 URL / FB pages 搜索 / Krak·GuleSider 用 google site: 搜索）+ 期望 NAP（名/电话/地址）+ `/verify?client=` 链接。
 - **override 存储**（`overrides.ts` + KV `alignment_override:<client>`）：run 开始拉取，applyOverrides 把 exists 改写 → coverage 计分（exists/differs→true，missing→false）。带 selftest。
-- **worker /verify 页**（ops only，GET 无副作用→防 Slack 预取误提交）：每平台 3 个 button-form（✓Findes/✗Findes ikke/⚠Afviger），**点击即存**（无独立提交键），POST `/api/verify/<client>/<platform>` 写 KV。
-- **dashboard 实时反映**（修复 `7235256`）：`loadAlignmentReport` 在渲染时合并 override（状态+coverage+grade），**镜像 run 的算分逻辑**→ 标注后刷新即见，且与下次 run 数值一致不闪烁（只对仍 needs_verification 的平台计分，幂等不重复计）。
-- workflow：run step 加 `SLACK_WEBHOOK_URL`；manual dispatch → `--run-type=manual`。
+- **worker /verify 页**（ops only，GET 无副作用→防 Slack 预取误提交）：单表单——每平台一组 radio（✓Findes/✗Findes ikke/⚠Afviger，当前 verdict 预选）+ **一个"Gem og se resultat →"提交键**（commit `e899c8c`，原 per-button 即存改为表单提交）。提交 → batch POST `/api/verify/<client>` 写 KV → **303 跳转 ops dashboard `#alignment` 锚点**，一次性看到更新后的结果。
+- **dashboard 实时反映**（修复 `7235256`）：`loadAlignmentReport` 在渲染时合并 override（状态+coverage+grade），**镜像 run 的算分逻辑**→ 标注后即见，且与下次 run 数值一致不闪烁（只对仍 needs_verification 的平台计分，幂等不重复计）。
 
-### 端到端验证通过（run `28157762805`，manual）
-人工在 /verify 标注 4 平台 → "Applied 4 manual override(s)" → Trustpilot 确认 findes(+5)、其余 3 个 findes ikke(0) →
-**score 10→15/F** 写回 dashboard。dashboard 实时显示：TP ✅"Bekræftet manuelt — profil findes"、其余 ❌"ikke registreret"、Google 灰。
-此时 4 平台全已 verified → 无 pending → **不再推 TODO（正常）**，只推结果。
+### 收尾：通知语义 + UX（commits `a342ffa` `5b6f2bb`）
+- **手动 run 总发 TODO**（`a342ffa`）：manual=刻意审计，无条件给 4 个目录平台的 verify 链接（含已验证的，供复核），不再要求"有 pending 才发"。day1 只问真没确认的；recurring cron 安静。
+- **Slack 整合成一条**（`5b6f2bb`）：run.ts 统一发——manual 一条消息=score+dashboard+verify链接；**定时无事即静默**（去掉每日 result 心跳，"no news is good news"）。workflow 的 Slack step 改 `failure()` 仅报失败（含降级守卫 exit 1，脚本崩了自己报不了）。
+- 设计原则沉淀见 memory `[[vibe_wisdom_manual_vs_scheduled_triggers]]`：命令式触发=全流程+全反馈；计划式=按需+无事静默。
 
-### 重新跑通整条流程（TODO→verify→结果）的方法
-已 verified 的平台不会再触发 TODO。要重测全链路需先**清掉 override**让平台回到 needs_verification：
+### 端到端验证通过（多次 manual run）
+人工在 /verify 单表单标注 4 平台 → 提交跳转 dashboard `#alignment` → 实时见结果：Trustpilot 确认 findes(+5)、其余 3 个 findes ikke(0) → **score 10→15/F**。Slack 收到一条整合消息（score+TODO 链接），点链接逐项确认、提交即见 dashboard 结果。全链路（TODO→verify→结果）顺。
+
+### 重测方法（现在简单了）
+手动 run 总会推 TODO，无需先清 override：
 ```
-# 从 edge/dashboard 目录（清除 virum 的人工标注）
-wrangler kv key delete "alignment_override:virum" --binding=DASHBOARD_KV --remote
-# 然后：
-gh workflow run alignment.yml -f client=virum -f force=true   # manual → 推 TODO（4 平台）
-#   → 打开 Slack TODO → 点 /verify?client=virum 链接逐个标注
-#   → 再 gh workflow run 同样命令 → 推结果（score 反映标注）+ dashboard link
+gh workflow run alignment.yml -f client=virum -f force=true   # → Slack 一条：score + 4 平台 verify 链接
+#   → 点 /verify?client=virum → 单表单标注 → 提交 → 跳 dashboard 看结果
 ```
-（说明：第一次 run 推 TODO，标注后第二次 run 推结果；若标注未尽则 TODO 列剩余项。）
+（如需把平台重置回 needs_verification 灰态：`wrangler kv key delete "alignment_override:virum" --binding=DASHBOARD_KV --remote`，从 edge/dashboard 目录。）
 
 ### 未做（YAGNI）
 - 精确 NAP 值录入（只做 exists/missing/differs 粗粒度，"differs"打标即可）。
 - Google Places API（等有 GBP 的付费客户 + Maps 仍坏再说）。
 - Trustpilot 免费 suggest 端点（域名搜索捞不到薄页时的自动捷径，待探）。
+
+### 🏁 里程碑：对齐系统当前需求开发完毕，暂告一段落（2026-06-25）
+核心闭环全部上线并多次验证：6 平台检测 + 评分 + 报告 + dashboard + 降级守卫（Maps 外部故障优雅降级）
++ 诚实第三态 + 人工审核闭环（Slack 一条 TODO → /verify 单表单 → 提交跳 dashboard 实时见结果）+ 命令式/计划式通知语义。
+**进入运营观察期。** 剩余均为非阻塞 backlog（见下表 + 上方 YAGNI）：Email 失败拖垮 run（MEDIUM）、Trustpilot rating 403（LOW）、
+send-email job 内测期仍注释。下一步要么接新客户跑 day1 全流程、要么按需做某个 backlog。
 
 ## 🔴 根因已找到：score 卡 10/100 的真凶（2026-06-24）
 
