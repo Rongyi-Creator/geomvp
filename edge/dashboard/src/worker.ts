@@ -1469,9 +1469,55 @@ interface ScoreHistory { clientId: string; history: ScoreHistoryEntry[]; }
 interface ReportIndexEntry { date: string; title: string; }
 
 async function loadAlignmentReport(env: Env, client: string): Promise<AlignmentReport | null> {
-  const raw = await env.DASHBOARD_KV.get(`alignment:${client}:latest`, "text");
+  const [raw, ovRaw] = await Promise.all([
+    env.DASHBOARD_KV.get(`alignment:${client}:latest`, "text"),
+    env.DASHBOARD_KV.get(`alignment_override:${client}`, "text"),
+  ]);
   if (!raw) return null;
-  try { return JSON.parse(raw) as AlignmentReport; } catch { return null; }
+  try {
+    const report = JSON.parse(raw) as AlignmentReport;
+    if (ovRaw) applyOverridesToReport(report, JSON.parse(ovRaw) as Record<string, { verdict: string }>);
+    return report;
+  } catch { return null; }
+}
+
+// Live-apply human verdicts so the dashboard reflects a freshly-marked verdict immediately
+// (without waiting for the next alignment run to rewrite the report). We mirror the run's
+// scoring exactly so the number doesn't flicker when the run later catches up.
+// Coverage credit per platform = its score when exists is confirmed.
+// ponytail: keep in sync with scripts/alignment/scoring.ts — PLATFORM_WEIGHTS + the per-platform
+// `claimed` value (trustpilot claimed=false→existsPoints 5; krak/guleSider/facebook→claimedPoints 5).
+const OVERRIDE_EXISTS_POINTS: Record<string, number> = { trustpilot: 5, krak: 5, guleSider: 5, facebook: 5 };
+
+function regradeAlignment(total: number): AlignmentScoreGrade {
+  // mirrors scripts/alignment/scoring.ts getGrade
+  if (total >= 85) return { score: total, grade: 'A', label_da: 'Fremragende',    color: '#16A34A' };
+  if (total >= 70) return { score: total, grade: 'B', label_da: 'God',            color: '#65A30D' };
+  if (total >= 50) return { score: total, grade: 'C', label_da: 'Acceptabel',     color: '#CA8A04' };
+  if (total >= 30) return { score: total, grade: 'D', label_da: 'Utilstrækkelig', color: '#EA580C' };
+  return                  { score: total, grade: 'F', label_da: 'Kritisk',        color: '#DC2626' };
+}
+
+function applyOverridesToReport(report: AlignmentReport, ov: Record<string, { verdict: string }>): void {
+  let coverageDelta = 0;
+  for (const p of report.platforms) {
+    const o = ov[p.id];
+    if (!o || p.status !== 'needs_verification') continue; // only platforms still pending
+    if (o.verdict === 'missing') {
+      p.status = 'missing'; p.statusText_da = 'Bekræftet manuelt — ikke registreret';
+      p.actionUrl = null; p.actionText_da = null;
+    } else {
+      const exists = o.verdict === 'exists';
+      p.status = exists ? 'ok' : 'warning';
+      p.statusText_da = exists ? 'Bekræftet manuelt — profil findes' : 'Findes — oplysninger afviger (manuelt bekræftet)';
+      coverageDelta += OVERRIDE_EXISTS_POINTS[p.id] ?? 0; // exists | differs both count as present
+    }
+  }
+  if (coverageDelta && report.score) {
+    report.score.coverage += coverageDelta;
+    report.score.total += coverageDelta;
+    report.score.grade = regradeAlignment(report.score.total);
+  }
 }
 
 async function loadScoreHistory(env: Env, client: string): Promise<ScoreHistory | null> {
@@ -1750,6 +1796,7 @@ function renderVerifyPage(report: AlignmentReport | null, ov: Record<string, { v
   return shell(
     `<h1 style="font-size:22px;margin-bottom:4px">🔍 Alignment-verifikation</h1>` +
     `<p style="color:#94a3b8;margin-top:0">${escHtml(report.client.name)} · ${escHtml(report.client.domain)}</p>` +
+    `<p style="color:#64748b;font-size:13px;margin:-4px 0 16px">Klik et valg — det gemmes med det samme (ingen separat indsend-knap).</p>` +
     (rows || `<p style="color:#10b981">Alt bekræftet — intet at verificere ✓</p>`) +
     `<p style="margin-top:28px;color:#64748b;font-size:12px">Verdikt gemmes med det samme og indregnes ved næste alignment-kørsel.</p>`,
   );
