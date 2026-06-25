@@ -152,10 +152,16 @@ async function main() {
   // Step 6: push to Dashboard KV
   await postToDashboard(report);
 
-  // Step 7: send notification email (skipped with --no-email)
+  // Step 7: send notification email (skipped with --no-email). NON-FATAL: the dashboard is
+  // already updated (step 6), so a Resend hiccup must not fail the whole run and fire a
+  // misleading "alignment failed" alert. Log it so we still know the client wasn't emailed.
   if (!noEmail && client.email) {
     // ponytail: email delay handled externally via GitHub Actions wait step
-    await sendNotificationEmail(report, client.email);
+    try {
+      await sendNotificationEmail(report, client.email);
+    } catch (e) {
+      console.warn(`[alignment] ⚠️ Email to ${client.email} failed — run still OK, dashboard updated: ${String(e)}`);
+    }
   } else if (noEmail) {
     console.log('[alignment] Email skipped (--no-email flag)');
   }
