@@ -106,8 +106,10 @@ timeout 提至 60s（同步会阻塞 20-60s）。涉及文件：
 **未做（YAGNI）**：不上 Google Places API。当前客户 Virum 本就没 GBP，Maps 数据即使正常也是 not-found；
 等"真有带 GBP 的付费客户、且 Outscraper Maps 仍坏着"再换（届时 Maps 可能已自愈）。
 
-**待验证**：触发一次干净 CI run（`gh workflow run alignment.yml -f client=virum -f force=true`），
-预期 Google 走灰 "Afventer"、守卫不触发、≈10/F 写回 dashboard。
+**✅ 已验证**（run `28142408236`，green，1m20s vs 旧 6m10s，commit `de4c8e0`）：
+Google ❌ Maps poll timeout 但 ~61s 快速失败（非 6 分钟）、守卫**未**触发（无 "Degraded run"）、
+NAP comparisons 0 fields→灰圈、Score 10/100(F)、Report pushed to Dashboard、Slack ✅。
+dashboard 现为干净 run 校准的 10/F。→ **对齐系统 MVP 开发完结，进入运营观察期。**
 
 ### 核心设计结论：对齐系统测两件不同的事
 - **覆盖度（是否存在）**：5 个平台全能自动测，都是丹麦本地 AI 真实引用源。"你没在 X 注册→去建"准确可执行。**所有平台都该留。**
