@@ -14,7 +14,12 @@ export async function checkGoogle(client: ClientProfile): Promise<GoogleResult> 
       limit: '3',
       language: 'da',
       fields: 'name,full_address,phone,rating,reviews,working_hours,place_id,google_id,site',
-    });
+    // ponytail: Outscraper's Maps service chronically parks /maps/search jobs in
+    // Pending indefinitely (external outage — a single isolated job sat Pending past
+    // 300s; see alignment-dev-progress.md). Retrying a service that never executes
+    // just doubles the wasted CI wait, so fail fast: 60s is ample for a *healthy*
+    // maps job (~10-30s) while not hanging the run for minutes when Maps is down.
+    }, { timeoutMs: 60000, retries: 0 });
     // maps/search: data[0] is the array of place objects for this query
     results = (data[0] as Record<string, unknown>[]) ?? [];
   } catch (e) {

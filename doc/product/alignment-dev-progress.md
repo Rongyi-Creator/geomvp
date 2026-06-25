@@ -85,12 +85,29 @@ timeout 提至 60s（同步会阻塞 20-60s）。涉及文件：
 | Facebook | ❌ 没找到 | 精度修复后纠正 |
 | 网站 GEO Layer | ✅ | JSON-LD 等技术信号 ≈10/20 |
 
-### 🔴 遗留未解决：Google maps/search 在 CI 里持续超时（3/3 次）
-- 现象：CI 里 `Google: ❌ Outscraper Maps error: poll timeout`，即使加了重试。
-- **账户是付费 credit 版**（用户澄清），所以**不是免费版串行/限流**——之前"队列拥塞"推断需重新核实。
-- 可能性：① 我整个下午用本地 key + 连发 3 次 CI ≈30+ jobs 把账户搞拥塞（停手后应缓解）；② maps/search 对"0 结果/难查询"处理就是慢，180s 不够；③ 轮询逻辑 bug。
-- **降级守卫已上线（commit `140045c`）**：Google 有 infra error 或 ≥3 平台报错 → 不推 dashboard、exit 1（CI 红 + Slack 告警），避免把假低分写给客户。**副作用**：Google 一直超时则每天 cron 都会 abort 不更新 → 必须先解决 Google 超时。
-- dashboard 当前显示 10/F（被一次降级 run 在守卫上线前覆盖了）；真实分也≈10，所以不算大错，但需一次干净 run 校准。
+### ✅ 已根因并修复：Google maps/search 在 CI 里持续超时（2026-06-25）
+**根因（本地单发实测确认，非推断）**：Outscraper 的 **Maps 服务**把 `/maps/search` job
+无限期停在 `Pending`。本地用 key 单发**一个**请求（队列已 drain、无并发、无连发），submit 正常
+（HTTP 202 拿到 `results_location`），但轮询 93 次、整整 300s 全 `Pending` 从不执行；
+事后再 poll 同一 job 仍 `Pending`（"Results are expired, or the task is not yet finished"）。
+对比：同账户 `google-search`（Krak/GuleSider/FB/Trustpilot 走的端点）0.2–0.8s 正常返回。
+→ 排除：① 我的连发拥塞（单发仍卡）；③ 轮询 bug（93 次干净 200/Pending）；② "慢但会成功"（300s 也不够，根本不跑）。
+社区证实 Maps 抓取器"卡 Pending 数小时到数天"是 Outscraper 侧已知反复故障，非我方代码。
+
+**修复（解耦 Maps，让单点外部故障优雅降级，而非冻结全盘）**：
+- `run.ts` 降级守卫：**Google 移出守卫**。Google 超时是外部+可预期，自身已优雅降级
+  （scoring `if(p.error)continue` 不假性扣分；report `unable_to_check`→worker NAP 圆环走灰
+  "Afventer Google-profil"）。守卫只在**非 Google** 平台（走健康的 google-search）≥3 个报错时
+  才 abort（那才是我方网络/CI/key 坏了的信号）。这样 Maps 挂着时其余 5 信号 + dashboard 照常每日更新。
+- `google.ts`：maps timeout 180s→**60s、retries 0**（对一个根本不执行的 job 重试只是白等 6 分钟 CI；
+  60s 对健康 maps job ~10-30s 绰绰有余，Maps 恢复后能正常拿到）。
+- **下游无需改**：scoring/generate-report/worker 早已正确处理 google error（灰圈+不扣分）。
+
+**未做（YAGNI）**：不上 Google Places API。当前客户 Virum 本就没 GBP，Maps 数据即使正常也是 not-found；
+等"真有带 GBP 的付费客户、且 Outscraper Maps 仍坏着"再换（届时 Maps 可能已自愈）。
+
+**待验证**：触发一次干净 CI run（`gh workflow run alignment.yml -f client=virum -f force=true`），
+预期 Google 走灰 "Afventer"、守卫不触发、≈10/F 写回 dashboard。
 
 ### 核心设计结论：对齐系统测两件不同的事
 - **覆盖度（是否存在）**：5 个平台全能自动测，都是丹麦本地 AI 真实引用源。"你没在 X 注册→去建"准确可执行。**所有平台都该留。**
@@ -118,7 +135,7 @@ timeout 提至 60s（同步会阻塞 20-60s）。涉及文件：
 | ✅ FIXED | Krak/GuleSider/FB/Trustpilot 假阳性（精度修复 `878fd66`） | 2026-06-25 |
 | ✅ FIXED | 重试移入 outscraperRequest，Google 也重试（`d43d484`） | 2026-06-25 |
 | ✅ FIXED | 降级 run 守卫（Google infra error 或 ≥3 报错 → 不推 `140045c`） | 2026-06-25 |
-| 🔴 OPEN | **Google maps/search CI 持续超时（付费账户，原因待查）** | **新窗口首要任务** |
+| ✅ FIXED | Google maps/search 超时 → 根因=Outscraper Maps 服务卡 Pending（外部故障）；解耦守卫+60s/无重试 | 2026-06-25 |
 | MEDIUM | Email 失败导致整个 run 失败 | 下次迭代 |
 | LOW | Trustpilot rating/reviewCount 拿不到（403） | 不计分，暂不处理 |
 

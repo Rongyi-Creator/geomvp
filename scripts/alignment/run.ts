@@ -85,15 +85,20 @@ async function main() {
   // score is meaningless. Don't clobber the client's dashboard or email them a fake
   // low score — fail the run so CI/Slack alert ops instead. A legit "not found"
   // (exists:false, no error) is real data and does NOT count here.
-  const ext = ['google', 'trustpilot', 'krak', 'guleSider', 'facebook'] as const;
+  //
+  // Google is deliberately EXCLUDED: Outscraper's Maps service chronically parks
+  // /maps/search in Pending (external outage), so a Google timeout is expected, not a
+  // sign our run is broken. It degrades gracefully on its own — scoring treats the
+  // error as "unknown" (no false penalty) and the NAP ring renders grey
+  // ("Afventer Google-profil", status unable_to_check). Aborting on it would freeze
+  // the dashboard for every client whenever Maps is down. We still abort when the
+  // OTHER platforms — which use the *healthy* google-search endpoint — fail en masse,
+  // since that points at our side (network/CI/key), not one flaky vendor service.
+  const ext = ['trustpilot', 'krak', 'guleSider', 'facebook'] as const;
   const platforms = checkResult.platforms as Record<string, { error?: string }>;
   const infraErrors = ext.filter(k => platforms[k]?.error);
-  // Google infra-failing alone makes the score unreliable: it's the sole NAP source
-  // and largest coverage weight, so its timeout drops ~55 of 100 points. A clean
-  // Google "not found" (no error) is legit data and does NOT trigger this.
-  if (platforms.google?.error || infraErrors.length >= 3) {
-    const why = platforms.google?.error ? `Google infra error (${platforms.google.error})` : `${infraErrors.length}/5 platforms failed`;
-    console.error(`[alignment] Degraded run — ${why}. Skipping dashboard push to avoid publishing a misleading score.`);
+  if (infraErrors.length >= 3) {
+    console.error(`[alignment] Degraded run — ${infraErrors.length}/4 non-Google platforms failed. Skipping dashboard push to avoid publishing a misleading score.`);
     process.exit(1);
   }
 
