@@ -1601,7 +1601,7 @@ function renderBlock6(report: AlignmentReport | null, history: ScoreHistory | nu
     ? `<div style="margin-top:12px;font-size:12px;color:#64748b">sameAs synced: ${report.sameAsUpdated.map(u => `<a href="${escHtml(u)}" style="color:#475569">${escHtml(new URL(u).hostname)}</a>`).join(' · ')}</div>`
     : '';
 
-  return `<div class="section">
+  return `<div class="section" id="alignment">
 <h2>6. Platform Alignment</h2>
 <div class="card" style="margin-bottom:20px">
   <table><thead><tr><th></th><th>Platform</th><th>Status</th><th></th></tr></thead><tbody>${platformRows}</tbody></table>
@@ -1783,22 +1783,32 @@ function renderVerifyPage(report: AlignmentReport | null, ov: Record<string, { v
   const rows = report.platforms.filter(p => p.status === 'needs_verification' || ov[p.id]).map(p => {
     const cur = ov[p.id]?.verdict;
     const check = verifyCheckUrl(p.id, report);
-    const btn = (v: string, label: string, color: string) =>
-      `<form method="POST" action="/api/verify/${encodeURIComponent(client)}/${encodeURIComponent(p.id)}" style="display:inline-block;margin:0 8px 0 0">` +
-      `<input type="hidden" name="verdict" value="${v}">` +
-      `<button type="submit" style="padding:8px 14px;border-radius:8px;border:1px solid ${cur === v ? color : '#475569'};background:${cur === v ? color : 'transparent'};color:#f8fafc;cursor:pointer;font-size:14px">${label}</button></form>`;
+    const radio = (v: string, label: string, color: string) =>
+      `<label style="display:inline-flex;align-items:center;gap:6px;margin-right:18px;cursor:pointer;font-size:14px">` +
+      `<input type="radio" name="v_${escHtml(p.id)}" value="${v}"${cur === v ? ' checked' : ''}>` +
+      `<span style="color:${color}">${label}</span></label>`;
     return `<div style="padding:18px 0;border-bottom:1px solid #1e293b">` +
       `<div style="font-size:16px;font-weight:600;margin-bottom:8px">${escHtml(p.icon)} ${escHtml(p.name_da)}${cur ? ` <span style="font-size:12px;color:#94a3b8;font-weight:400">— registreret: ${escHtml(cur)}</span>` : ''}</div>` +
       (check ? `<div style="margin-bottom:12px"><a href="${escHtml(check)}" target="_blank" rel="noopener" style="color:#3b82f6;font-size:13px">→ Søg på ${escHtml(p.name_da)}</a></div>` : '') +
-      `<div>${btn('exists', '✓ Findes', '#10b981')}${btn('missing', '✗ Findes ikke', '#ef4444')}${btn('differs', '⚠ Findes, men afviger', '#f59e0b')}</div></div>`;
+      `<div>${radio('exists', '✓ Findes', '#10b981')}${radio('missing', '✗ Findes ikke', '#ef4444')}${radio('differs', '⚠ Findes, men afviger', '#f59e0b')}</div></div>`;
   }).join('');
+
+  if (!rows) {
+    return shell(
+      `<h1 style="font-size:22px;margin-bottom:4px">🔍 Alignment-verifikation</h1>` +
+      `<p style="color:#94a3b8;margin-top:0">${escHtml(report.client.name)} · ${escHtml(report.client.domain)}</p>` +
+      `<p style="color:#10b981">Alt bekræftet — intet at verificere ✓</p>` +
+      `<p style="margin-top:20px"><a href="/?view=ops#alignment" style="color:#3b82f6">→ Se resultat på dashboard</a></p>`,
+    );
+  }
 
   return shell(
     `<h1 style="font-size:22px;margin-bottom:4px">🔍 Alignment-verifikation</h1>` +
     `<p style="color:#94a3b8;margin-top:0">${escHtml(report.client.name)} · ${escHtml(report.client.domain)}</p>` +
-    `<p style="color:#64748b;font-size:13px;margin:-4px 0 16px">Klik et valg — det gemmes med det samme (ingen separat indsend-knap).</p>` +
-    (rows || `<p style="color:#10b981">Alt bekræftet — intet at verificere ✓</p>`) +
-    `<p style="margin-top:28px;color:#64748b;font-size:12px">Verdikt gemmes med det samme og indregnes ved næste alignment-kørsel.</p>`,
+    `<p style="color:#64748b;font-size:13px;margin:-4px 0 16px">Vælg for hver platform, og tryk Gem — så lander du på det opdaterede resultat.</p>` +
+    `<form method="POST" action="/api/verify/${encodeURIComponent(client)}">${rows}` +
+    `<button type="submit" style="margin-top:22px;padding:12px 26px;border-radius:8px;border:none;background:#3b82f6;color:#fff;font-size:15px;font-weight:600;cursor:pointer">Gem og se resultat →</button>` +
+    `</form>`,
   );
 }
 
@@ -1877,18 +1887,21 @@ export default {
     }
     // API: record a human verdict for one platform (ops only). Form POST so the verify
     // page's buttons work without JS; GET pages stay side-effect-free (safe from Slack prefetch).
-    if (path.match(/^\/api\/verify\/[^/]+\/[^/]+$/) && request.method === "POST") {
+    // Record verdicts from the verify-page form (batch), then land on the updated
+    // dashboard at the alignment section — the human sees the result in one shot.
+    if (path.match(/^\/api\/verify\/[^/]+$/) && request.method === "POST") {
       if (auth.type !== 'ops') return new Response("Forbidden", { status: 403 });
-      const parts = path.split("/");
-      const client = parts[3], platform = parts[4];
+      const client = path.split("/")[3];
       const form = await request.formData();
-      const verdict = String(form.get("verdict") ?? "");
-      if (!['exists', 'missing', 'differs'].includes(verdict)) return new Response("Bad verdict", { status: 400 });
       const raw = await env.DASHBOARD_KV.get(`alignment_override:${client}`, "text");
       const ov = raw ? JSON.parse(raw) as Record<string, unknown> : {};
-      ov[platform] = { verdict, at: new Date().toISOString() };
+      const now = new Date().toISOString();
+      for (const id of ['trustpilot', 'krak', 'guleSider', 'facebook']) {
+        const v = String(form.get(`v_${id}`) ?? '');
+        if (['exists', 'missing', 'differs'].includes(v)) ov[id] = { verdict: v, at: now };
+      }
       await env.DASHBOARD_KV.put(`alignment_override:${client}`, JSON.stringify(ov));
-      return new Response(null, { status: 303, headers: { Location: `${url.origin}/verify?client=${encodeURIComponent(client)}` } });
+      return new Response(null, { status: 303, headers: { Location: `${url.origin}/?view=ops#alignment` } });
     }
     // Verification page (ops only) — Slack TODO links here; side-effect-free GET.
     if (path === "/verify" && request.method === "GET") {
