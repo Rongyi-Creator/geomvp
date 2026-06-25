@@ -11,6 +11,8 @@ import { calcScore } from './scoring.js';
 import { generateReport } from './generate-report.js';
 import { updateGeoLayer } from './update-geo-layer.js';
 import { sendNotificationEmail } from './send-email.js';
+import { fetchOverrides, applyOverrides } from './overrides.js';
+import { postVerificationTodo } from './verify-todo.js';
 import type { ClientProfile, AlignmentReport, ScoreHistory } from './types.js';
 
 const clientId = process.argv[2] ?? 'virum';
@@ -65,6 +67,7 @@ async function main() {
   const workerUrl = process.env.DASHBOARD_WORKER_URL ?? '';
   const opsToken  = process.env.DASHBOARD_TOKEN ?? '';
   const history   = workerUrl && opsToken ? await fetchHistory(workerUrl, opsToken, clientId) : null;
+  const overrides = workerUrl && opsToken ? await fetchOverrides(workerUrl, opsToken, clientId) : {};
 
   if (!force && history) {
     const lastDate  = new Date(history.history.at(-1)?.date ?? 0);
@@ -80,6 +83,11 @@ async function main() {
 
   // Step 1: detect platforms
   const checkResult = await runAlignmentCheck(client);
+
+  // Fold in human-verification verdicts (slice 2): a confirmed listing flips exists=true
+  // so coverage scoring credits it; a confirmed absence flips it to false.
+  applyOverrides(checkResult, overrides);
+  if (Object.keys(overrides).length) console.log(`[alignment] Applied ${Object.keys(overrides).length} manual override(s)`);
 
   // Guard: if infra errors (Outscraper timeout/API failure) hit most platforms, the
   // score is meaningless. Don't clobber the client's dashboard or email them a fake
@@ -111,7 +119,16 @@ async function main() {
   console.log(`[alignment] Score: ${score.total}/100 (${score.grade.grade})`);
 
   // Step 4: generate report
-  const report = generateReport(checkResult, comparisons, score, runType);
+  const report = generateReport(checkResult, comparisons, score, runType, overrides);
+
+  // Step 4b: Slack TODO for platforms automated detection couldn't confirm — the human
+  // verifies via the dashboard /verify page, and the verdict folds back in on the next run.
+  // Only on day1 / manual runs so recurring crons don't re-nag daily for the same platforms.
+  const pending = report.platforms.filter(p => p.status === 'needs_verification').map(p => p.id);
+  if (pending.length && (runType === 'day1' || runType === 'manual') && process.env.SLACK_WEBHOOK_URL && workerUrl) {
+    await postVerificationTodo(process.env.SLACK_WEBHOOK_URL, workerUrl, client, pending);
+    console.log(`[alignment] Posted verification TODO for: ${pending.join(', ')}`);
+  }
 
   // Step 5: update sameAs in business.json
   updateGeoLayer(clientId, report);

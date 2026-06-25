@@ -184,3 +184,11 @@ export interface ScoreHistory {
   clientId: string;
   history: ScoreHistoryEntry[];
 }
+
+// Human verification verdict for a platform that automated detection couldn't confirm
+// (status needs_verification). Stored in KV alignment_override:<client>, keyed by platform id.
+export interface AlignmentOverride {
+  verdict: 'exists' | 'missing' | 'differs'; // confirmed present / confirmed absent / present but NAP differs
+  at: string; // ISO timestamp of the human verdict
+}
+export type AlignmentOverrides = Record<string, AlignmentOverride>;

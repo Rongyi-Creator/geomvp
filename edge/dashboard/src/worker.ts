@@ -1712,6 +1712,49 @@ async function sendWelcomeEmail(env: Env, clientId: string, requestOrigin: strin
 
 // ── Main Worker ──
 
+// Where the human goes to look (mirrors scripts/alignment/verify-todo.ts). Trustpilot has
+// a deterministic profile URL; Facebook a stable page-search; Krak/GuleSider have no clean
+// public search URL, so scope a Google search to their domain.
+function verifyCheckUrl(platform: string, report: AlignmentReport): string {
+  const domain = (report.client.domain || '').replace(/^www\./, '');
+  const name = report.client.name || '';
+  const g = (s: string) => `https://www.google.com/search?q=${encodeURIComponent(s)}`;
+  switch (platform) {
+    case 'trustpilot': return `https://www.trustpilot.com/review/${domain}`;
+    case 'facebook':   return `https://www.facebook.com/search/pages?q=${encodeURIComponent(name)}`;
+    case 'krak':       return g(`${name} site:krak.dk`);
+    case 'guleSider':  return g(`${name} site:degulesider.dk`);
+    default:           return '';
+  }
+}
+
+function renderVerifyPage(report: AlignmentReport | null, ov: Record<string, { verdict: string }>, client: string): string {
+  const shell = (inner: string) =>
+    `<!doctype html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Verifikation</title></head>` +
+    `<body style="font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8fafc;max-width:680px;margin:0 auto;padding:40px 20px">${inner}</body></html>`;
+  if (!report) return shell(`<p>Ingen alignment-data for "${escHtml(client)}".</p>`);
+
+  const rows = report.platforms.filter(p => p.status === 'needs_verification' || ov[p.id]).map(p => {
+    const cur = ov[p.id]?.verdict;
+    const check = verifyCheckUrl(p.id, report);
+    const btn = (v: string, label: string, color: string) =>
+      `<form method="POST" action="/api/verify/${encodeURIComponent(client)}/${encodeURIComponent(p.id)}" style="display:inline-block;margin:0 8px 0 0">` +
+      `<input type="hidden" name="verdict" value="${v}">` +
+      `<button type="submit" style="padding:8px 14px;border-radius:8px;border:1px solid ${cur === v ? color : '#475569'};background:${cur === v ? color : 'transparent'};color:#f8fafc;cursor:pointer;font-size:14px">${label}</button></form>`;
+    return `<div style="padding:18px 0;border-bottom:1px solid #1e293b">` +
+      `<div style="font-size:16px;font-weight:600;margin-bottom:8px">${escHtml(p.icon)} ${escHtml(p.name_da)}${cur ? ` <span style="font-size:12px;color:#94a3b8;font-weight:400">— registreret: ${escHtml(cur)}</span>` : ''}</div>` +
+      (check ? `<div style="margin-bottom:12px"><a href="${escHtml(check)}" target="_blank" rel="noopener" style="color:#3b82f6;font-size:13px">→ Søg på ${escHtml(p.name_da)}</a></div>` : '') +
+      `<div>${btn('exists', '✓ Findes', '#10b981')}${btn('missing', '✗ Findes ikke', '#ef4444')}${btn('differs', '⚠ Findes, men afviger', '#f59e0b')}</div></div>`;
+  }).join('');
+
+  return shell(
+    `<h1 style="font-size:22px;margin-bottom:4px">🔍 Alignment-verifikation</h1>` +
+    `<p style="color:#94a3b8;margin-top:0">${escHtml(report.client.name)} · ${escHtml(report.client.domain)}</p>` +
+    (rows || `<p style="color:#10b981">Alt bekræftet — intet at verificere ✓</p>`) +
+    `<p style="margin-top:28px;color:#64748b;font-size:12px">Verdikt gemmes med det samme og indregnes ved næste alignment-kørsel.</p>`,
+  );
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -1776,6 +1819,41 @@ export default {
       ]);
       if (!reportRaw) return new Response(JSON.stringify({ error: "No alignment data" }), { status: 404, headers: { "Content-Type": "application/json" } });
       return new Response(JSON.stringify({ report: JSON.parse(reportRaw), history: histRaw ? JSON.parse(histRaw) : null }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    // API: human verification verdicts (slice 2, ops only) — read stored overrides
+    if (path.match(/^\/api\/verify\/[^/]+$/) && request.method === "GET") {
+      if (auth.type !== 'ops') return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      const client = path.split("/")[3];
+      const raw = await env.DASHBOARD_KV.get(`alignment_override:${client}`, "text");
+      return new Response(JSON.stringify({ overrides: raw ? JSON.parse(raw) : {} }), { headers: { "Content-Type": "application/json" } });
+    }
+    // API: record a human verdict for one platform (ops only). Form POST so the verify
+    // page's buttons work without JS; GET pages stay side-effect-free (safe from Slack prefetch).
+    if (path.match(/^\/api\/verify\/[^/]+\/[^/]+$/) && request.method === "POST") {
+      if (auth.type !== 'ops') return new Response("Forbidden", { status: 403 });
+      const parts = path.split("/");
+      const client = parts[3], platform = parts[4];
+      const form = await request.formData();
+      const verdict = String(form.get("verdict") ?? "");
+      if (!['exists', 'missing', 'differs'].includes(verdict)) return new Response("Bad verdict", { status: 400 });
+      const raw = await env.DASHBOARD_KV.get(`alignment_override:${client}`, "text");
+      const ov = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+      ov[platform] = { verdict, at: new Date().toISOString() };
+      await env.DASHBOARD_KV.put(`alignment_override:${client}`, JSON.stringify(ov));
+      return new Response(null, { status: 303, headers: { Location: `${url.origin}/verify?client=${encodeURIComponent(client)}` } });
+    }
+    // Verification page (ops only) — Slack TODO links here; side-effect-free GET.
+    if (path === "/verify" && request.method === "GET") {
+      if (auth.type !== 'ops') return new Response("Forbidden", { status: 403 });
+      const client = url.searchParams.get("client") ?? "";
+      const [reportRaw, ovRaw] = await Promise.all([
+        env.DASHBOARD_KV.get(`alignment:${client}:latest`, "text"),
+        env.DASHBOARD_KV.get(`alignment_override:${client}`, "text"),
+      ]);
+      const report = reportRaw ? JSON.parse(reportRaw) as AlignmentReport : null;
+      const ov = ovRaw ? JSON.parse(ovRaw) as Record<string, { verdict: string }> : {};
+      return new Response(renderVerifyPage(report, ov, client), { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
 
     // API: Upload OtterlyAI prompts CSV

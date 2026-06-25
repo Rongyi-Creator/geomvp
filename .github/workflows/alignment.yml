@@ -44,9 +44,10 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           DASHBOARD_WORKER_URL: ${{ secrets.DASHBOARD_WORKER_URL }}
           DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           CLIENT="${{ inputs.client || 'virum' }}"
-          FLAGS="${{ inputs.force && '--force' || '' }} --no-email"
+          FLAGS="${{ inputs.force && '--force' || '' }} --no-email ${{ github.event_name == 'workflow_dispatch' && '--run-type=manual' || '' }}"
           pnpm tsx scripts/alignment/run.ts $CLIENT $FLAGS
 
       - name: Notify Slack

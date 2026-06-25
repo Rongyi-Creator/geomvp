@@ -1,5 +1,14 @@
-import type { AlignmentCheckResult, NapComparison, ScoreBreakdown, AlignmentReport, PlatformStatus, PrioritizedAction } from './types.js';
+import type { AlignmentCheckResult, NapComparison, ScoreBreakdown, AlignmentReport, PlatformStatus, PrioritizedAction, AlignmentOverrides } from './types.js';
 import { PLATFORM_WEIGHTS } from './scoring.js';
+
+// A human verdict (from the /verify page) overrides automated needs_verification.
+function overrideStatus(id: string, ov: AlignmentOverrides, detailUrl?: string | null): PlatformStatus | null {
+  const o = ov[id];
+  if (!o) return null;
+  if (o.verdict === 'missing') return ps(id, 'missing', 'Bekræftet manuelt — ikke registreret', []);
+  if (o.verdict === 'differs') return ps(id, 'warning', 'Findes — oplysninger afviger (manuelt bekræftet)', ['NAP afviger fra dine kanoniske data'], detailUrl);
+  return ps(id, 'ok', 'Bekræftet manuelt — profil findes', [], detailUrl);
+}
 
 const PLATFORM_CONFIG: Record<string, { name_da: string; icon: string; createUrl: string; checkUrl: string }> = {
   google:     { name_da: 'Google Business Profile', icon: '📍', createUrl: 'https://business.google.com/', checkUrl: 'https://business.google.com/' },
@@ -10,7 +19,7 @@ const PLATFORM_CONFIG: Record<string, { name_da: string; icon: string; createUrl
   website:    { name_da: 'Din hjemmeside (GEO Layer)', icon: '🌐', createUrl: '', checkUrl: '' },
 };
 
-function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparison[]): PlatformStatus[] {
+function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparison[], ov: AlignmentOverrides): PlatformStatus[] {
   const statuses: PlatformStatus[] = [];
   const p = r.platforms;
 
@@ -25,8 +34,11 @@ function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparis
   }
 
   // Trustpilot — domain search can still miss a thin/unindexed profile, so a clean
-  // not-found is "needs manual check", not a confident "missing".
-  if (p.trustpilot.error) {
+  // not-found is "needs manual check", not a confident "missing". A human verdict wins.
+  const tpOv = overrideStatus('trustpilot', ov, p.trustpilot.profileUrl);
+  if (tpOv) {
+    statuses.push(tpOv);
+  } else if (p.trustpilot.error) {
     statuses.push(ps('trustpilot', 'unable_to_check', 'Kunne ikke kontrolleres automatisk', []));
   } else if (!p.trustpilot.exists) {
     statuses.push(ps('trustpilot', 'needs_verification', 'Afventer manuel bekræftelse', []));
@@ -35,7 +47,10 @@ function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparis
   }
 
   // Krak
-  if (p.krak.error) {
+  const krakOv = overrideStatus('krak', ov, p.krak.listingUrl);
+  if (krakOv) {
+    statuses.push(krakOv);
+  } else if (p.krak.error) {
     statuses.push(ps('krak', 'unable_to_check', 'Kunne ikke kontrolleres automatisk', []));
   } else if (!p.krak.exists) {
     statuses.push(ps('krak', 'needs_verification', 'Afventer manuel bekræftelse', []));
@@ -46,7 +61,10 @@ function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparis
   }
 
   // De Gule Sider
-  if (p.guleSider.error) {
+  const gsOv = overrideStatus('guleSider', ov, p.guleSider.listingUrl);
+  if (gsOv) {
+    statuses.push(gsOv);
+  } else if (p.guleSider.error) {
     statuses.push(ps('guleSider', 'unable_to_check', 'Kunne ikke kontrolleres automatisk', []));
   } else if (!p.guleSider.exists) {
     statuses.push(ps('guleSider', 'needs_verification', 'Afventer manuel bekræftelse', []));
@@ -57,7 +75,10 @@ function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparis
   }
 
   // Facebook
-  if (p.facebook.error) {
+  const fbOv = overrideStatus('facebook', ov, p.facebook.pageUrl);
+  if (fbOv) {
+    statuses.push(fbOv);
+  } else if (p.facebook.error) {
     statuses.push(ps('facebook', 'unable_to_check', 'Kunne ikke kontrolleres automatisk', []));
   } else if (!p.facebook.exists) {
     statuses.push(ps('facebook', 'needs_verification', 'Afventer manuel bekræftelse', []));
@@ -125,8 +146,9 @@ export function generateReport(
   comparisons: NapComparison[],
   score: ScoreBreakdown,
   runType: AlignmentReport['runType'],
+  overrides: AlignmentOverrides = {},
 ): AlignmentReport {
-  const platforms  = buildPlatformStatuses(checkResult, comparisons);
+  const platforms  = buildPlatformStatuses(checkResult, comparisons, overrides);
   const actions    = buildActions(platforms, comparisons);
   const sameAs     = buildSameAs(checkResult, platforms);
 
