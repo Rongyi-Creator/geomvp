@@ -61,6 +61,15 @@ gh workflow run alignment.yml -f client=virum -f force=true   # → Slack 一条
 - Google Places API（等有 GBP 的付费客户 + Maps 仍坏再说）。
 - Trustpilot 免费 suggest 端点（域名搜索捞不到薄页时的自动捷径，待探）。
 
+### 📋 上线前可选需求点（go-live 前评估）
+
+**[可选] Email 发送失败 → 软告警到 Slack**（commit `5a885ea` 已把 email 失败改为非致命）
+- **现状**：email 是 step 7（在 dashboard push 之后），失败已用 try/catch 兜住——run 不再 exit 1、不再误报"alignment failed"，但只 `console.warn` 进 CI 日志（**没人盯**）。
+- **缺口**：email 开启后（去掉 `--no-email` / 启用 send-email job），某客户偶发发信失败时，**dashboard 更新了但客户没收到报告邮件，且无人知情**。失败属"flaky 外部依赖"类（Resend 5xx/限流/退信/域名校验失效/key 失效），单客户低频但随客户数×每日必然发生。
+- **建议实现**：在 `run.ts` step 7 的 catch 里，除 console.warn 外，发一条**软 Slack 提醒** `⚠️ Email to <client> failed (dashboard OK, follow up manually)`。约 2 行（复用现成 `postSlack`）。
+- **触发时机**：**开启客户邮件之前**做。不开邮件就不需要（现状 `--no-email`，概率 0）。
+- **判断**：非阻塞，但开邮件前值得顺手加——否则"静默漏发"是上线后才会发现的坑。
+
 ### 🏁 里程碑：对齐系统当前需求开发完毕，暂告一段落（2026-06-25）
 核心闭环全部上线并多次验证：6 平台检测 + 评分 + 报告 + dashboard + 降级守卫（Maps 外部故障优雅降级）
 + 诚实第三态 + 人工审核闭环（Slack 一条 TODO → /verify 单表单 → 提交跳 dashboard 实时见结果）+ 命令式/计划式通知语义。
