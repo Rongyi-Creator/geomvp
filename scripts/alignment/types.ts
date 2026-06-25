@@ -140,7 +140,9 @@ export interface PlatformStatus {
   id: string;
   name_da: string;
   icon: string;
-  status: 'ok' | 'warning' | 'missing' | 'error' | 'unable_to_check';
+  // needs_verification: automated scrape found nothing, but our method (Google-ranking
+  // dependent) can't confirm absence — show grey "pending manual check", not red "missing".
+  status: 'ok' | 'warning' | 'missing' | 'error' | 'unable_to_check' | 'needs_verification';
   statusText_da: string;
   issues: string[];
   actionUrl: string | null;

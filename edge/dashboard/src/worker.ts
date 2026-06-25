@@ -1520,7 +1520,7 @@ function renderBlock6(report: AlignmentReport | null, history: ScoreHistory | nu
     return `<div class="section"><h2>6. Platform Alignment</h2><div class="card"><div class="empty">No alignment data yet — run <code>pnpm tsx scripts/alignment/run.ts virum</code> to check</div></div></div>`;
   }
 
-  const statusColor: Record<string, string> = { ok: '#10b981', warning: '#f59e0b', missing: '#ef4444', error: '#ef4444', unable_to_check: '#64748b' };
+  const statusColor: Record<string, string> = { ok: '#10b981', warning: '#f59e0b', missing: '#ef4444', error: '#ef4444', unable_to_check: '#64748b', needs_verification: '#64748b' };
 
   const platformRows = report.platforms.map(p => {
     const color = statusColor[p.status] ?? '#64748b';
@@ -1604,9 +1604,10 @@ ${dnsStatus}
   </div></a>`;
   };
 
-  const statusIcon: Record<string, string> = { ok: '✅', warning: '⚠️', missing: '❌', unable_to_check: '—', error: '⚠️' };
+  const statusIcon: Record<string, string> = { ok: '✅', warning: '⚠️', missing: '❌', unable_to_check: '—', error: '⚠️', needs_verification: '🔍' };
+  const greyStatus = (s: string) => s === 'unable_to_check' || s === 'needs_verification';
   const platformList = report.platforms.map(p =>
-    `<div class="status-row"><span>${escHtml(p.icon)} ${escHtml(p.name_da)}</span><span style="font-size:13px;color:${p.status === 'ok' ? '#10b981' : p.status === 'missing' ? '#ef4444' : '#f59e0b'}">${statusIcon[p.status] ?? '—'} ${escHtml(p.statusText_da)}</span></div>`
+    `<div class="status-row"><span>${escHtml(p.icon)} ${escHtml(p.name_da)}</span><span style="font-size:13px;color:${p.status === 'ok' ? '#10b981' : greyStatus(p.status) ? '#64748b' : p.status === 'missing' ? '#ef4444' : '#f59e0b'}">${statusIcon[p.status] ?? '—'} ${escHtml(p.statusText_da)}</span></div>`
   ).join('');
 
   const topActions = report.prioritizedActions.slice(0, 3).map((a, i) =>

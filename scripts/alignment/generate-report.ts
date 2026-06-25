@@ -24,9 +24,12 @@ function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparis
     statuses.push(ps('google', issues.length ? 'warning' : 'ok', issues.length ? 'Fundet — oplysninger bør opdateres' : 'Oprettet og verificeret', issues, p.google.mapsUrl));
   }
 
-  // Trustpilot
-  if (!p.trustpilot.exists) {
-    statuses.push(ps('trustpilot', 'missing', 'Ingen Trustpilot-profil', ['Profil ikke oprettet']));
+  // Trustpilot — domain search can still miss a thin/unindexed profile, so a clean
+  // not-found is "needs manual check", not a confident "missing".
+  if (p.trustpilot.error) {
+    statuses.push(ps('trustpilot', 'unable_to_check', 'Kunne ikke kontrolleres automatisk', []));
+  } else if (!p.trustpilot.exists) {
+    statuses.push(ps('trustpilot', 'needs_verification', 'Afventer manuel bekræftelse', []));
   } else {
     statuses.push(ps('trustpilot', 'ok', `Profil fundet · ${p.trustpilot.rating ?? '--'}/5 (${p.trustpilot.reviewCount ?? 0} anmeldelser)`, [], p.trustpilot.profileUrl));
   }
@@ -35,7 +38,7 @@ function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparis
   if (p.krak.error) {
     statuses.push(ps('krak', 'unable_to_check', 'Kunne ikke kontrolleres automatisk', []));
   } else if (!p.krak.exists) {
-    statuses.push(ps('krak', 'missing', 'Ikke fundet på Krak.dk', []));
+    statuses.push(ps('krak', 'needs_verification', 'Afventer manuel bekræftelse', []));
   } else {
     const issues = comparisons.filter(c => c.platform === 'krak' && (c.match === 'minor_diff' || c.match === 'major_diff')).map(c => c.diffDescription);
     // ponytail: we only confirm the listing exists — NAP not scraped from Krak, so don't claim "korrekt"
@@ -46,7 +49,7 @@ function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparis
   if (p.guleSider.error) {
     statuses.push(ps('guleSider', 'unable_to_check', 'Kunne ikke kontrolleres automatisk', []));
   } else if (!p.guleSider.exists) {
-    statuses.push(ps('guleSider', 'missing', 'Ikke fundet på De Gule Sider', []));
+    statuses.push(ps('guleSider', 'needs_verification', 'Afventer manuel bekræftelse', []));
   } else {
     const issues = comparisons.filter(c => c.platform === 'guleSider' && (c.match === 'minor_diff' || c.match === 'major_diff')).map(c => c.diffDescription);
     // ponytail: we only confirm the listing exists — NAP not scraped from GuleSider, so don't claim "korrekt"
@@ -54,8 +57,10 @@ function buildPlatformStatuses(r: AlignmentCheckResult, comparisons: NapComparis
   }
 
   // Facebook
-  if (!p.facebook.exists) {
-    statuses.push(ps('facebook', 'missing', 'Ingen Facebook Business-side fundet', []));
+  if (p.facebook.error) {
+    statuses.push(ps('facebook', 'unable_to_check', 'Kunne ikke kontrolleres automatisk', []));
+  } else if (!p.facebook.exists) {
+    statuses.push(ps('facebook', 'needs_verification', 'Afventer manuel bekræftelse', []));
   } else {
     statuses.push(ps('facebook', 'ok', 'Facebook-side fundet (NAP kræver manuel verifikation)', [], p.facebook.pageUrl));
   }
