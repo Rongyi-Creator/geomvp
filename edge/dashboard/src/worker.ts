@@ -119,10 +119,10 @@ async function queryAE(env: Env, sql: string): Promise<AERow[]> {
 // ── SVG Generators ──
 
 const COLORS: Record<string, string> = {
-  ai_retrieval: "#10b981",
-  seo_crawler: "#3b82f6",
-  ai_training: "#f59e0b",
-  visitor: "#6b7280",
+  ai_retrieval: "#86AD94",
+  seo_crawler: "#6E8CA8",
+  ai_training: "#BE9A5E",
+  visitor: "#454C57",
 };
 
 const LABELS: Record<string, string> = {
@@ -132,33 +132,34 @@ const LABELS: Record<string, string> = {
   visitor: "Visitors",
 };
 
-function svgPieChart(data: { label: string; value: number; color: string }[]): string {
+function svgDonutChart(
+  data: { label: string; value: number; color: string }[],
+  chartId: string
+): string {
   const total = data.reduce((s, d) => s + d.value, 0);
-  if (total === 0) return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><circle cx="100" cy="100" r="90" fill="#1e293b" stroke="#334155" stroke-width="2"/><text x="100" y="105" text-anchor="middle" fill="#94a3b8" font-size="14">No data</text></svg>`;
-
-  let svg = `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">`;
-  let cumAngle = -90;
-
+  if (total === 0) {
+    return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><circle cx="100" cy="100" r="72" fill="none" stroke="#1B2028" stroke-width="28"/><text x="100" y="108" text-anchor="middle" fill="#5C636E" font-size="13" font-family="Geist,-apple-system,sans-serif">No data</text></svg>`;
+  }
+  const cx = 100, cy = 100, outerR = 86, innerR = 57, GAP = 2.5;
+  const dominant = data.reduce((a, b) => a.value > b.value ? a : b);
+  const toR = (a: number) => (a * Math.PI) / 180;
+  let svg = `<svg id="${chartId}" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<circle cx="${cx}" cy="${cy}" r="${(outerR + innerR) / 2}" fill="none" stroke="#1B2028" stroke-width="${outerR - innerR}"/>`;
+  let cum = -90;
   for (const d of data) {
     if (d.value === 0) continue;
-    const pct = d.value / total;
-    const angle = pct * 360;
-
-    if (pct >= 0.999) {
-      svg += `<circle cx="100" cy="100" r="90" fill="${d.color}"/>`;
-    } else {
-      const startRad = (cumAngle * Math.PI) / 180;
-      const endRad = ((cumAngle + angle) * Math.PI) / 180;
-      const x1 = 100 + 90 * Math.cos(startRad);
-      const y1 = 100 + 90 * Math.sin(startRad);
-      const x2 = 100 + 90 * Math.cos(endRad);
-      const y2 = 100 + 90 * Math.sin(endRad);
-      const largeArc = angle > 180 ? 1 : 0;
-      svg += `<path d="M100,100 L${x1},${y1} A90,90 0 ${largeArc},1 ${x2},${y2} Z" fill="${d.color}"/>`;
-    }
-    cumAngle += angle;
+    const seg = (d.value / total) * 360;
+    const sA = cum + GAP / 2, eA = cum + seg - GAP / 2;
+    cum += seg;
+    const large = seg - GAP > 180 ? 1 : 0;
+    const ox1 = cx + outerR * Math.cos(toR(sA)), oy1 = cy + outerR * Math.sin(toR(sA));
+    const ox2 = cx + outerR * Math.cos(toR(eA)), oy2 = cy + outerR * Math.sin(toR(eA));
+    const ix1 = cx + innerR * Math.cos(toR(eA)), iy1 = cy + innerR * Math.sin(toR(eA));
+    const ix2 = cx + innerR * Math.cos(toR(sA)), iy2 = cy + innerR * Math.sin(toR(sA));
+    svg += `<path d="M${ox1.toFixed(1)},${oy1.toFixed(1)} A${outerR},${outerR} 0 ${large},1 ${ox2.toFixed(1)},${oy2.toFixed(1)} L${ix1.toFixed(1)},${iy1.toFixed(1)} A${innerR},${innerR} 0 ${large},0 ${ix2.toFixed(1)},${iy2.toFixed(1)} Z" fill="${d.color}"/>`;
   }
-
+  svg += `<text id="${chartId}-val" x="${cx}" y="${cy - 4}" text-anchor="middle" dominant-baseline="auto" font-weight="600" font-size="34" fill="#E8E9E5" font-family="Geist,-apple-system,sans-serif">${dominant.value}</text>`;
+  svg += `<text id="${chartId}-lbl" x="${cx}" y="${cy + 17}" text-anchor="middle" dominant-baseline="auto" font-size="9" fill="#9298A1" font-family="Geist Mono,monospace" letter-spacing="1">${escHtml(dominant.label.toUpperCase())}</text>`;
   svg += `</svg>`;
   return svg;
 }
@@ -187,14 +188,14 @@ function svgLineChart(
     ? `lc${series.map(s => s.label).join('').split('').reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 0).toString(36)}`
     : '';
 
-  let svgBody = `<rect width="${width}" height="${totalH}" fill="#0f172a" rx="8"/>`;
+  let svgBody = `<rect width="${width}" height="${totalH}" fill="#12151A"/>`;
 
   // Static legend (non-interactive only)
   if (!interactive) {
     let legendX = pad.left;
     for (const s of series) {
       svgBody += `<circle cx="${legendX + 5}" cy="16" r="5" fill="${s.color}"/>`;
-      svgBody += `<text x="${legendX + 14}" y="20" fill="#cbd5e1" font-size="11">${s.label}</text>`;
+      svgBody += `<text x="${legendX + 14}" y="20" fill="#E8E9E5" font-size="11">${s.label}</text>`;
       legendX += s.label.length * 7 + 30;
     }
   }
@@ -203,8 +204,8 @@ function svgLineChart(
   for (let i = 0; i <= 4; i++) {
     const y = pad.top + (h * i) / 4;
     const val = Math.round(maxY * (1 - i / 4));
-    svgBody += `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="#1e293b" stroke-width="1"/>`;
-    svgBody += `<text x="${pad.left - 8}" y="${y + 4}" text-anchor="end" fill="#64748b" font-size="10">${val}</text>`;
+    svgBody += `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="#1F252E" stroke-width="1"/>`;
+    svgBody += `<text x="${pad.left - 8}" y="${y + 4}" text-anchor="end" fill="#5C636E" font-size="10">${val}</text>`;
   }
 
   // X labels (thin when many)
@@ -213,7 +214,7 @@ function svgLineChart(
   for (let i = 0; i < xLabels.length; i++) {
     if (i % labelSkip !== 0 && i !== xLabels.length - 1) continue;
     const x = pad.left + step * i;
-    svgBody += `<text x="${x}" y="${height - 5}" text-anchor="middle" fill="#64748b" font-size="9">${xLabels[i]}</text>`;
+    svgBody += `<text x="${x}" y="${height - 5}" text-anchor="middle" fill="#5C636E" font-size="9">${xLabels[i]}</text>`;
   }
 
   // Lines + data labels
@@ -279,13 +280,13 @@ function svgStackedBarChart(
   for (const d of days) for (const b of d.bots) allBots.set(b.name, b.color);
 
   let svg = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="width:100%">`;
-  svg += `<rect width="${width}" height="${height}" fill="#0f172a" rx="8"/>`;
+  svg += `<rect width="${width}" height="${height}" fill="#12151A"/>`;
 
   // Legend
   let legendX = pad.left;
   for (const [name, color] of allBots) {
     svg += `<circle cx="${legendX + 5}" cy="16" r="5" fill="${color}"/>`;
-    svg += `<text x="${legendX + 14}" y="20" fill="#cbd5e1" font-size="10">${name}</text>`;
+    svg += `<text x="${legendX + 14}" y="20" fill="#E8E9E5" font-size="10">${name}</text>`;
     legendX += name.length * 6.5 + 28;
   }
 
@@ -293,8 +294,8 @@ function svgStackedBarChart(
   for (let i = 0; i <= 4; i++) {
     const y = pad.top + (h * i) / 4;
     const val = Math.round(maxY * (1 - i / 4));
-    svg += `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="#1e293b" stroke-width="1"/>`;
-    svg += `<text x="${pad.left - 8}" y="${y + 4}" text-anchor="end" fill="#64748b" font-size="10">${val}</text>`;
+    svg += `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="#1F252E" stroke-width="1"/>`;
+    svg += `<text x="${pad.left - 8}" y="${y + 4}" text-anchor="end" fill="#5C636E" font-size="10">${val}</text>`;
   }
 
   // Bars
@@ -317,7 +318,7 @@ function svgStackedBarChart(
       yOffset += barH;
     }
     // X label
-    svg += `<text x="${x + barW / 2}" y="${height - 5}" text-anchor="middle" fill="#64748b" font-size="9">${d.label}</text>`;
+    svg += `<text x="${x + barW / 2}" y="${height - 5}" text-anchor="middle" fill="#5C636E" font-size="9">${d.label}</text>`;
   }
 
   // Activation marker
@@ -334,67 +335,103 @@ function svgStackedBarChart(
 // ── HTML Rendering ──
 
 function renderStyles(): string {
-  return `<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#e2e8f0;line-height:1.5}
-.container{max-width:1200px;margin:0 auto;padding:24px}
-h1{font-size:28px;font-weight:700;margin-bottom:8px}
-h2{font-size:20px;font-weight:600;margin-bottom:16px;color:#f8fafc;border-bottom:2px solid #1e293b;padding-bottom:8px}
-h3{font-size:16px;font-weight:600;margin-bottom:12px;color:#cbd5e1}
-.subtitle{color:#94a3b8;font-size:14px;margin-bottom:32px}
-.grid{display:grid;gap:24px;margin-bottom:32px}
-.grid-2{grid-template-columns:1fr 1fr}
-.grid-3{grid-template-columns:1fr 1fr 1fr}
-.grid-4{grid-template-columns:1fr 1fr 1fr 1fr}
-.card{background:#1e293b;border-radius:12px;padding:24px;border:1px solid #334155}
-.stat-value{font-size:36px;font-weight:800;color:#f8fafc}
-.stat-label{font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px}
-.stat-sub{font-size:12px;color:#64748b;margin-top:2px}
-table{width:100%;border-collapse:collapse;font-size:14px}
-th{text-align:left;padding:10px 12px;color:#94a3b8;font-weight:500;border-bottom:1px solid #334155;font-size:12px;text-transform:uppercase;letter-spacing:0.5px}
-td{padding:10px 12px;border-bottom:1px solid #1e293b}
-.badge{display:inline-block;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600}
-.badge-green{background:#065f46;color:#6ee7b7}
-.badge-blue{background:#1e3a5f;color:#93c5fd}
-.badge-amber{background:#78350f;color:#fcd34d}
-.badge-gray{background:#374151;color:#9ca3af}
-.badge-red{background:#7f1d1d;color:#fca5a5}
-.section{margin-bottom:40px}
-.pie-container{display:flex;align-items:center;gap:24px}
-.pie-chart{width:160px;height:160px;flex-shrink:0}
-.pie-legend{display:flex;flex-direction:column;gap:8px}
-.legend-item{display:flex;align-items:center;gap:8px;font-size:13px}
-.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.empty{color:#64748b;font-style:italic;padding:20px 0;text-align:center}
-.bar{height:8px;border-radius:4px;background:#334155;overflow:hidden}
-.bar-fill{height:100%;border-radius:4px}
-.status-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1e293b}
+  return `<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--accent:#587B66;--bright:#86AD94;--strong:#456250;--bg:#12151A;--panel:#171B21;--panel2:#1B2028;--line:#252B35;--line2:#1F252E;--tx:#E8E9E5;--tx2:#9298A1;--tx3:#5C636E;--blue:#6E8CA8;--amber:#BE9A5E;--neutral:#454C57;--warn:#C99A52;--danger:#CB7E70}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{font-family:'Geist',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;-webkit-font-smoothing:antialiased;font-size:15px;line-height:1.55}
+button{font:inherit;color:inherit;cursor:pointer;border:none;background:none;padding:0}
+a{color:var(--bright)}
+table{border-collapse:collapse;width:100%}
+::selection{background:rgba(134,173,148,.3)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:#2A313B;border-radius:0;border:2px solid var(--bg)}
+::-webkit-scrollbar-thumb:hover{background:#3A424E}
+@keyframes geo-pulse{0%{transform:scale(1);opacity:.5}70%{transform:scale(3);opacity:0}100%{transform:scale(3);opacity:0}}
+.container{max-width:1160px;margin:0 auto;padding:clamp(24px,4vw,44px) clamp(16px,4vw,40px) 80px}
+.geo-header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:14px clamp(16px,4vw,40px);background:rgba(18,21,26,.82);backdrop-filter:saturate(150%) blur(16px);-webkit-backdrop-filter:saturate(150%) blur(16px);border-bottom:1px solid var(--line2)}
+.geo-logo{display:flex;align-items:center;gap:14px;min-width:0}
+.geo-logo-brand{display:flex;align-items:center;font-size:15px;letter-spacing:-.02em}
+.geo-logo-dot{display:inline-block;width:5px;height:5px;background:var(--bright);transform:rotate(45deg);margin:0 7px;flex-shrink:0}
+.geo-sep{width:1px;height:18px;background:var(--line);flex-shrink:0}
+.geo-domain-wrap{min-width:0}
+.geo-domain{font-family:'Geist Mono',monospace;font-size:12px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.geo-domain-sub{font-size:11px;color:var(--tx3);white-space:nowrap}
+.geo-header-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.geo-live{display:inline-flex;align-items:center;gap:7px;font-family:'Geist Mono',monospace;font-size:11px;color:var(--bright)}
+.geo-live-dot{position:relative;width:7px;height:7px;flex-shrink:0;display:inline-block}
+.geo-live-dot span{position:absolute;inset:0;border-radius:50%;background:var(--bright)}
+.geo-live-dot span+span{animation:geo-pulse 2.4s ease-out infinite}
+.geo-avatar{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:var(--panel);border:1px solid var(--line);font-family:'Geist Mono',monospace;font-size:12px;color:var(--tx2);letter-spacing:.02em;flex-shrink:0}
+.page-label{font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.16em;color:var(--bright);margin:0 0 12px}
+h1{font-weight:600;font-size:clamp(26px,4vw,38px);letter-spacing:-.035em;line-height:1.05;margin:0 0 28px;color:var(--tx)}
+.section-hdr{display:flex;align-items:center;gap:14px;margin:72px 0 24px}
+.section-num{font-family:'Geist Mono',monospace;font-size:12px;color:var(--tx3)}
+h2{font-weight:600;font-size:clamp(18px,2.4vw,23px);letter-spacing:-.025em;margin:0;color:var(--tx)}
+.section-rule{flex:1;height:1px;background:var(--line2)}
+h3{font-size:13px;font-weight:500;color:var(--tx);margin:0 0 16px}
+.card{background:var(--panel);border:1px solid var(--line);padding:22px}
+.grid{display:grid;gap:14px;margin-bottom:14px}
+.grid-2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.grid-3{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.grid-4{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.stat-value{font-weight:600;font-size:30px;letter-spacing:-.035em;line-height:1;color:var(--tx)}
+.stat-label{font-family:'Geist Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--tx2);margin:8px 0 4px}
+.stat-sub{font-size:11px;color:var(--tx3)}
+th{text-align:left;padding:7px 12px;font-family:'Geist Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--line2)}
+td{padding:8px 12px;border-top:1px solid var(--line2);font-size:13px;color:var(--tx)}
+tr:hover td{background:var(--panel2)}
+.badge{display:inline-block;font-family:'Geist Mono',monospace;font-size:10px;font-weight:400;padding:2px 8px;border:1px solid;background:transparent}
+.badge-green{color:var(--bright);border-color:var(--bright)}
+.badge-blue{color:var(--blue);border-color:var(--blue)}
+.badge-amber{color:var(--amber);border-color:var(--amber)}
+.badge-gray{color:var(--tx3);border-color:var(--neutral)}
+.badge-red{color:var(--danger);border-color:var(--danger)}
+.section{margin-bottom:0}
+.pie-container{display:flex;align-items:center;gap:28px;flex-wrap:wrap}
+.pie-chart{width:200px;height:200px;flex-shrink:0}
+.pie-legend{display:flex;flex-direction:column;gap:14px;flex:1;min-width:160px}
+.legend-item{display:flex;align-items:center;gap:10px;font-size:13px;cursor:default}
+.legend-item:hover .legend-lbl{color:var(--tx)}
+.legend-dot{width:10px;height:10px;flex-shrink:0}
+.legend-lbl{flex:1;color:var(--tx2)}
+.legend-val{font-family:'Geist Mono',monospace;font-size:12px;color:var(--tx2)}
+.empty{color:var(--tx3);font-style:italic;padding:20px 0;text-align:center}
+.bar{height:6px;background:var(--line2);overflow:hidden}
+.bar-fill{height:100%}
+.status-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px}
 .status-row:last-child{border:none}
-.change-up{color:#10b981}
-.change-down{color:#ef4444}
-.change-neutral{color:#94a3b8}
-.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
-.header-right{text-align:right}
-.live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:6px}
-.timestamp{font-size:12px;color:#64748b}
-.time-nav{display:flex;gap:6px;margin-bottom:28px}
-.time-pill{padding:5px 14px;border-radius:9999px;font-size:12px;font-weight:600;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer;text-decoration:none}
-.time-pill:hover{border-color:#475569;color:#cbd5e1}
-.time-pill.active{background:#3b82f6;border-color:#3b82f6;color:#fff}
-.data-source{font-size:11px;color:#475569;margin-top:12px}
-.data-source a{color:#64748b;text-decoration:underline}
+.change-up{color:var(--bright);font-family:'Geist Mono',monospace;font-size:12px}
+.change-down{color:var(--danger);font-family:'Geist Mono',monospace;font-size:12px}
+.change-neutral{color:var(--tx3);font-family:'Geist Mono',monospace;font-size:12px}
+.subtitle{color:var(--tx2);font-size:14px;margin-bottom:16px}
+.timestamp{font-family:'Geist Mono',monospace;font-size:11px;color:var(--tx3)}
+.time-nav{display:inline-flex;padding:3px;background:var(--panel);border:1px solid var(--line);gap:2px;margin-bottom:28px}
+.time-pill{display:inline-block;padding:6px 13px;font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:.02em;text-decoration:none;color:var(--tx2);background:transparent;transition:background .2s,color .2s}
+.time-pill:hover{color:var(--tx)}
+.time-pill.active{background:var(--bright);color:var(--bg);font-weight:500}
+.data-source{font-family:'Geist Mono',monospace;font-size:11px;color:var(--tx3);margin-top:12px}
+.data-source a{color:var(--tx3);text-decoration:underline}
+.layer-label{font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3);margin-bottom:8px}
+.btn-outline{display:inline-block;padding:6px 14px;border:1px solid var(--line);font-family:'Geist Mono',monospace;font-size:11px;color:var(--tx2);text-decoration:none;white-space:nowrap;flex-shrink:0;letter-spacing:.02em}
+.btn-outline:hover{border-color:var(--tx3);color:var(--tx)}
+.insight-banner{background:linear-gradient(135deg,rgba(88,123,102,.12),rgba(88,123,102,.03));border:1px solid rgba(134,173,148,.3);padding:20px;margin-bottom:14px}
+.insight-banner h3{color:var(--tx);font-size:15px;margin-bottom:6px;font-weight:600}
+.insight-banner p{color:var(--tx2);font-size:13px;line-height:1.5}
+.geo-footer{margin-top:40px;padding-top:24px;border-top:1px solid var(--line2);display:flex;align-items:center;justify-content:space-between;gap:16px}
 @media(max-width:768px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}.pie-container{flex-direction:column}}
-.insight-banner{background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);border:1px solid #334155;border-radius:12px;padding:20px 24px;margin-bottom:24px}
-.insight-banner h3{color:#f8fafc;font-size:18px;margin-bottom:4px}
-.insight-banner p{color:#94a3b8;font-size:14px;line-height:1.5}
-.layer-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:8px;font-weight:600}
 </style>
 <script>
 function geoToggle(cid,sid){var chart=document.getElementById(cid);if(!chart)return;var allG=chart.querySelectorAll('.geo-series');var allB=chart.querySelectorAll('.geo-lb');var target=document.getElementById(cid+'-'+sid);var isSolo=target&&target.getAttribute('data-solo')==='1';if(isSolo){allG.forEach(function(g){g.style.display='';g.removeAttribute('data-solo')});allB.forEach(function(b){b.style.opacity='1'})}else{allG.forEach(function(g){g.style.display='none';g.removeAttribute('data-solo')});allB.forEach(function(b){b.style.opacity='0.35'});if(target){target.style.display='';target.setAttribute('data-solo','1')}var ab=chart.querySelector('.geo-lb[data-sid="'+sid+'"]');if(ab)ab.style.opacity='1'}}
+function geoDonut(cid,val,lbl){var v=document.getElementById(cid+'-val');var l=document.getElementById(cid+'-lbl');if(v)v.textContent=val;if(l)l.textContent=lbl;}
 </script>`;
 }
 
-function renderTimeNav(days: number, view: string, client: string = "virum"): string {
+function renderTimeNav(days: number, view: string, client: string = "virum", inHeader = false): string {
   const presets = [
     { d: 7, label: "7D" },
     { d: 14, label: "14D" },
@@ -403,23 +440,29 @@ function renderTimeNav(days: number, view: string, client: string = "virum"): st
   ];
   const clientParam = client !== "virum" ? `&client=${encodeURIComponent(client)}` : "";
   const viewParam = view !== "ops" ? `&view=${view}` : "";
-  return `<div class="time-nav">${presets.map(p =>
+  const style = inHeader ? ' style="margin-bottom:0"' : '';
+  return `<div class="time-nav"${style}>${presets.map(p =>
     `<a href="?days=${p.d}${clientParam}${viewParam}" class="time-pill${p.d === days ? " active" : ""}">${p.label}</a>`
   ).join("")}</div>`;
 }
 
-function renderHeader(config: ClientConfig, generatedAt: string, days: number, client: string = "virum"): string {
-  return `<div class="header">
-<div>
-  <h1>GEO Effect Dashboard</h1>
-  <div class="subtitle">${escHtml(config.domain)} — GEO active since ${escHtml(config.activeSince)}</div>
+function renderHeader(config: ClientConfig, _generatedAt: string, days: number, client: string = "virum"): string {
+  return `<header class="geo-header">
+<div class="geo-logo">
+  <div class="geo-logo-brand">
+    <span style="font-weight:600;color:var(--tx)">Found</span><span class="geo-logo-dot"></span><span style="color:var(--tx2);font-weight:400">by AI</span>
+  </div>
+  <span class="geo-sep"></span>
+  <div class="geo-domain-wrap">
+    <div class="geo-domain">${escHtml(config.domain)}</div>
+    <div class="geo-domain-sub">GEO aktiv siden ${escHtml(config.activeSince)}</div>
+  </div>
 </div>
-<div class="header-right">
-  <div><span class="live-dot"></span>Live Data</div>
-  <div class="timestamp">Generated: ${escHtml(generatedAt)}</div>
+<div class="geo-header-right">
+  <div class="geo-live"><span class="geo-live-dot"><span></span><span></span></span>Live</div>
+  ${renderTimeNav(days, "ops", client, true)}
 </div>
-</div>
-${renderTimeNav(days, "ops", client)}`;
+</header>`;
 }
 
 function renderStatCard(value: string, label: string, sub?: string): string {
@@ -439,7 +482,7 @@ function renderInsightCard(
   return `<div class="card">
 <div class="stat-value">${value}</div>
 <div class="stat-label">${label}</div>
-<div style="margin-top:8px;font-size:12px;color:#94a3b8;line-height:1.4">${insight}</div>
+<div style="margin-top:8px;font-size:12px;color:var(--tx2);line-height:1.4">${insight}</div>
 </div>`;
 }
 
@@ -525,8 +568,9 @@ async function renderBlock1(env: Env, days: number, config: ClientConfig): Promi
         .join("")}</tbody></table>`
     : `<div class="empty">No bot visits recorded yet</div>`;
 
+  const dominant = pieData.length ? pieData.reduce((a, b) => a.value > b.value ? a : b) : { label: '', value: 0 };
   return `<div class="section">
-<h2>1. Bot Traffic Overview</h2>
+<div class="section-hdr"><span class="section-num">01</span><h2>Bot Traffic Overview</h2><span class="section-rule"></span></div>
 <div class="grid grid-4" style="margin-bottom:20px">
   ${renderStatCard(fmt(total), "Total Requests", `${fmt(aiTotal)} AI · ${fmt(seoTotal)} SEO · ${fmt(visitorTotal)} visitors`)}
   ${renderStatCard(fmt(aiTotal), "AI Retrieval Bots", "ChatGPT, Perplexity, Claude…")}
@@ -535,18 +579,18 @@ async function renderBlock1(env: Env, days: number, config: ClientConfig): Promi
 </div>
 <div class="grid grid-2">
   <div class="card">
-    <h3>Traffic Distribution</h3>
+    <h3>Trafikfordeling</h3>
     <div class="pie-container">
-      <div class="pie-chart">${svgPieChart(pieData)}</div>
+      <div class="pie-chart">${svgDonutChart(pieData, 'geo-dn-traffic')}</div>
       <div class="pie-legend">
-        ${pieData.map((d) => `<div class="legend-item"><div class="legend-dot" style="background:${d.color}"></div>${escHtml(d.label)}: ${fmt(d.value)}</div>`).join("")}
-        <div style="font-size:11px;color:#475569;margin-top:8px;line-height:1.4">Bot traffic only — ${fmt(visitorTotal)} human visitors served transparently via the same proxy.</div>
+        ${pieData.map((d) => `<div class="legend-item" onmouseenter="geoDonut('geo-dn-traffic','${d.value}','${d.label.toUpperCase()}')" onmouseleave="geoDonut('geo-dn-traffic','${dominant.value}','${dominant.label.toUpperCase()}')"><div class="legend-dot" style="background:${d.color}"></div><span class="legend-lbl">${escHtml(d.label)}</span><span class="legend-val">${fmt(d.value)}</span></div>`).join("")}
+        <div style="font-size:11px;color:var(--tx3);margin-top:4px;line-height:1.5">+ ${fmt(visitorTotal)} besøgende serveret transparent via samme proxy.</div>
       </div>
     </div>
   </div>
-  <div class="card">
-    <h3>Bot Detail</h3>
-    ${botTable}
+  <div class="card" style="display:flex;flex-direction:column">
+    <h3>Bot-detaljer</h3>
+    <div style="overflow-y:auto;max-height:270px;flex:1">${botTable}</div>
   </div>
 </div>
 <div class="card" style="margin-top:20px">
@@ -583,10 +627,10 @@ async function renderBlock2(env: Env, days: number): Promise<string> {
   const rate = totalHtml > 0 ? ((injected / (injected + passthrough)) * 100).toFixed(1) : "—";
 
   const statusItems = [
-    { label: "GEO Injected", value: injected, color: "#10b981" },
-    { label: "Passthrough (no match)", value: passthrough, color: "#f59e0b" },
-    { label: "Non-HTML (assets)", value: nonHtml, color: "#3b82f6" },
-    { label: "Skipped (non-2xx)", value: skipped, color: "#ef4444" },
+    { label: "GEO Injected", value: injected, color: "#86AD94" },
+    { label: "Passthrough (no match)", value: passthrough, color: "#454C57" },
+    { label: "Non-HTML (assets)", value: nonHtml, color: "#454C57" },
+    { label: "Skipped (non-2xx)", value: skipped, color: "#CB7E70" },
   ];
 
   const topPagesTable = topPages.length > 0
@@ -601,9 +645,9 @@ async function renderBlock2(env: Env, days: number): Promise<string> {
     : `<div class="empty">No AI bot visits to GEO-injected pages yet</div>`;
 
   return `<div class="section">
-<h2>2. GEO Injection Stats</h2>
+<div class="section-hdr"><span class="section-num">02</span><h2>GEO Injection Stats</h2><span class="section-rule"></span></div>
 <div class="grid grid-4" style="margin-bottom:20px">
-  ${renderStatCard(`${rate}%`, "Injection Rate", "HTML pages with GEO schema")}
+  <div class="card"><div class="stat-value" style="color:var(--bright)">${rate}%</div><div class="stat-label">Injection Rate</div><div class="stat-sub">HTML pages with GEO schema</div></div>
   ${renderStatCard(fmt(injected), "Pages Injected", "Schema added on-the-fly")}
   ${renderStatCard(fmt(passthrough), "Passthrough", "No matching GEO data")}
   ${renderStatCard(fmt(skipped), "Skipped", "Non-2xx responses")}
@@ -614,19 +658,17 @@ async function renderBlock2(env: Env, days: number): Promise<string> {
     ${statusItems
       .map((s) => {
         const pct = totalHtml > 0 ? (s.value / totalHtml) * 100 : 0;
-        return `<div class="status-row">
-          <span>${s.label}</span>
-          <span style="display:flex;align-items:center;gap:8px">
-            <span style="width:120px"><div class="bar"><div class="bar-fill" style="width:${pct}%;background:${s.color}"></div></div></span>
-            <span style="min-width:60px;text-align:right">${fmt(s.value)}</span>
-          </span>
+        return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line2);font-size:13px">
+          <span style="flex:1;color:var(--tx2)">${s.label}</span>
+          <div style="width:160px;height:4px;background:var(--line2);overflow:hidden;flex-shrink:0"><div style="height:100%;width:${pct.toFixed(0)}%;background:${s.color}"></div></div>
+          <span style="font-family:'Geist Mono',monospace;font-size:12px;min-width:36px;text-align:right;color:var(--tx)">${fmt(s.value)}</span>
         </div>`;
       })
       .join("")}
   </div>
-  <div class="card">
+  <div class="card" style="display:flex;flex-direction:column">
     <h3>Top GEO Pages (AI Bot Visits)</h3>
-    ${topPagesTable}
+    <div style="overflow-y:auto;max-height:270px;flex:1">${topPagesTable}</div>
   </div>
 </div>
 </div>`;
@@ -651,7 +693,7 @@ async function renderBlock3(env: Env, client: string): Promise<string> {
 
   if (!promptsRaw && !citationsRaw) {
     return `<div class="section">
-<h2>3. AI Search Visibility</h2>
+<div class="section-hdr"><span class="section-num">03</span><h2>AI Search Visibility</h2><span class="section-rule"></span></div>
 <div class="card">
   <div class="empty">
     <p style="font-size:16px;margin-bottom:8px">OtterlyAI data not yet imported</p>
@@ -709,9 +751,23 @@ async function renderBlock3(env: Env, client: string): Promise<string> {
   // ── Competitors table ──
   let competitorsHtml = `<div class="empty">No prompts data</div>`;
   if (prompts && prompts.competitors.length > 0) {
-    competitorsHtml = `<table>
+    const myMentioned = prompts.brandMentioned ?? 0;
+    const myCited = citations?.myDomainCitations ?? 0;
+    const prevMentioned = promptsPrev?.brandMentioned ?? 0;
+    const mentionDelta = myMentioned - prevMentioned;
+    const deltaHtml2 = mentionDelta > 0
+      ? ` <span style="font-family:'Geist Mono',monospace;font-size:10px;color:var(--bright)">+${mentionDelta}</span>`
+      : mentionDelta < 0 ? ` <span style="font-family:'Geist Mono',monospace;font-size:10px;color:var(--danger)">${mentionDelta}</span>` : '';
+    const selfInList = prompts.competitors.some(c => c.name.toLowerCase().includes(client.toLowerCase()));
+    const selfRow = selfInList ? '' : `<tr style="border-top:2px solid var(--line2)">
+      <td style="color:var(--tx3)">—</td>
+      <td style="color:var(--bright);font-weight:500">${escHtml(client)} <span style="font-family:'Geist Mono',monospace;font-size:10px;border:1px solid var(--accent);color:var(--accent);padding:1px 5px;margin-left:4px">dig</span></td>
+      <td>${myMentioned}${deltaHtml2}</td>
+      <td>${myCited}</td>
+    </tr>`;
+    competitorsHtml = `<div style="font-size:11px;font-family:'Geist Mono',monospace;color:var(--tx3);margin-bottom:12px">Importeret data · ikke tidsfilteret</div><table>
 <thead><tr><th>#</th><th>Competitor</th><th>Mentioned</th><th>Cited</th></tr></thead>
-<tbody>${prompts.competitors.map((c, i) => `<tr><td>${i + 1}</td><td>${escHtml(c.name)}</td><td>${c.mentioned}</td><td>${c.cited}</td></tr>`).join("")}</tbody></table>`;
+<tbody>${prompts.competitors.map((c, i) => `<tr><td>${i + 1}</td><td>${escHtml(c.name)}</td><td>${c.mentioned}</td><td>${c.cited}</td></tr>`).join("")}${selfRow}</tbody></table>`;
   }
 
   // ── AI Engine coverage ──
@@ -731,43 +787,43 @@ async function renderBlock3(env: Env, client: string): Promise<string> {
   }
 
   // ── My domain citations table ──
-  let myUrlsHtml = `<div class="empty">No domain citations found</div>`;
+  const fmtDato = (d: string) => {
+    const parts = d.split('-');
+    const mo = parseInt(parts[1] ?? '0');
+    const dy = parseInt(parts[2] ?? '0');
+    const months = ['','jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+    return `${dy}. ${months[mo] ?? ''}`;
+  };
+
+  let myUrlsBody = `<div class="empty">No domain citations found</div>`;
   if (citations && citations.myUrls.length > 0) {
-    myUrlsHtml = `<table>
-<thead><tr><th>URL</th><th>Engine</th><th>Pos</th><th>Prompt</th><th>Date</th></tr></thead>
-<tbody>${citations.myUrls
-      .map(
-        (u) =>
-          `<tr><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(u.url)}</td><td style="text-transform:capitalize">${escHtml(u.engine)}</td><td>#${u.position}</td><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(u.prompt)}</td><td>${escHtml(u.date)}</td></tr>`
-      )
-      .join("")}</tbody></table>`;
+    myUrlsBody = `<table>
+<thead><tr><th>Motor</th><th>Pos</th><th>Prompt</th><th>Dato</th></tr></thead>
+<tbody>${citations.myUrls.map(u =>
+  `<tr>
+    <td style="font-weight:500;text-transform:capitalize">${escHtml(u.engine)}</td>
+    <td style="font-family:'Geist Mono',monospace;font-size:12px;color:var(--tx3)">#${u.position}</td>
+    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--tx2)">${escHtml(u.prompt)}</td>
+    <td style="font-family:'Geist Mono',monospace;font-size:11px;color:var(--tx3);white-space:nowrap">${escHtml(fmtDato(u.date))}</td>
+  </tr>`).join('')}</tbody></table>`;
   }
 
-  // ── Top cited domains bar chart ──
-  let topDomainsHtml = "";
+  let topDomainsBody = `<div class="empty">No domain data</div>`;
   if (citations && citations.topDomains.length > 0) {
     const maxCit = citations.topDomains[0].citations;
-    topDomainsHtml = `<div class="card" style="margin-top:20px">
-  <h3>Top Cited Domains</h3>
-  ${citations.topDomains
-    .slice(0, 10)
-    .map((d) => {
+    topDomainsBody = citations.topDomains.slice(0, 10).map(d => {
       const pct = maxCit > 0 ? (d.citations / maxCit) * 100 : 0;
       const isMine = d.domain.includes("virumakupunktur");
-      return `<div class="status-row">
-        <span${isMine ? ` style="color:#10b981;font-weight:600"` : ""}>${escHtml(d.domain)}</span>
-        <span style="display:flex;align-items:center;gap:8px">
-          <span style="width:120px"><div class="bar"><div class="bar-fill" style="width:${pct}%;background:${isMine ? "#10b981" : "#3b82f6"}"></div></div></span>
-          <span style="min-width:40px;text-align:right">${d.citations}</span>
-        </span>
+      return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line2);font-size:13px">
+        <span style="flex:1;${isMine ? 'color:var(--bright);font-weight:500' : 'color:var(--tx2)'}">${escHtml(d.domain)}</span>
+        <div style="width:140px;height:4px;background:var(--line2);overflow:hidden;flex-shrink:0"><div style="height:100%;width:${pct.toFixed(0)}%;background:${isMine ? 'var(--bright)' : 'var(--neutral)'}"></div></div>
+        <span style="font-family:'Geist Mono',monospace;font-size:12px;min-width:28px;text-align:right;color:var(--tx2)">${d.citations}</span>
       </div>`;
-    })
-    .join("")}
-</div>`;
+    }).join('');
   }
 
   return `<div class="section">
-<h2>3. AI Search Visibility <span class="badge badge-amber" style="font-size:11px;vertical-align:middle">OtterlyAI</span></h2>
+<div class="section-hdr"><span class="section-num">03</span><h2>AI Search Visibility</h2><span class="badge badge-amber">OtterlyAI</span><span class="section-rule"></span></div>
 <div class="timestamp" style="margin-bottom:16px">Last updated: ${escHtml(updatedAt)}${prevDate ? ` · vs ${escHtml(prevDate)}` : ""}</div>
 ${statsHtml}
 <div class="grid grid-2">
@@ -780,11 +836,16 @@ ${statsHtml}
     ${enginesHtml}
   </div>
 </div>
-<div class="card" style="margin-top:20px">
-  <h3>My Domain Citations</h3>
-  ${myUrlsHtml}
+<div class="grid grid-2" style="margin-top:20px">
+  <div class="card" style="display:flex;flex-direction:column">
+    <h3>Mine domæne-citationer</h3>
+    <div style="overflow-y:auto;max-height:300px;flex:1">${myUrlsBody}</div>
+  </div>
+  <div class="card" style="display:flex;flex-direction:column">
+    <h3>Mest citerede domæner</h3>
+    <div style="overflow-y:auto;max-height:300px;flex:1">${topDomainsBody}</div>
+  </div>
 </div>
-${topDomainsHtml}
 </div>`;
 }
 
@@ -852,7 +913,7 @@ async function renderBlock4(env: Env, client: string = "virum"): Promise<string>
   ];
 
   return `<div class="section">
-<h2>4. Baseline Comparison</h2>
+<div class="section-hdr"><span class="section-num">04</span><h2>Baseline Comparison</h2><span class="section-rule"></span></div>
 <div class="timestamp" style="margin-bottom:16px">Baseline captured: ${escHtml(baseline.capturedAt)}</div>
 <div class="card">
   <table>
@@ -900,7 +961,7 @@ async function renderBlock5(env: Env, days: number): Promise<string> {
   const totalMissedVisits = rows.reduce((s, r) => s + (Number(r.visits) || 0), 0);
 
   return `<div class="section">
-<h2>5. GEO Coverage Gaps <span class="badge badge-red" style="font-size:11px;vertical-align:middle">Action needed</span></h2>
+<div class="section-hdr"><span class="section-num">05</span><h2>GEO Coverage Gaps</h2><span class="badge badge-red">Action needed</span><span class="section-rule"></span></div>
 <div class="subtitle" style="margin-bottom:16px">Pages bots visit that receive no GEO schema — each row is a GEO improvement ticket</div>
 <div class="grid grid-2" style="margin-bottom:20px">
   ${renderStatCard(String(totalGaps), "Uncovered Pages", "Bot-visited with no GEO data")}
@@ -916,13 +977,13 @@ async function renderBlock5(env: Env, days: number): Promise<string> {
 // ── Client View: Layer 1 — Funnel (AI traffic reaching your business) ──
 
 const AI_BOT_COLORS: Record<string, string> = {
-  "ChatGPT-User": "#10b981",
-  "PerplexityBot": "#8b5cf6",
-  "ClaudeBot": "#f59e0b",
-  "OAI-SearchBot": "#3b82f6",
-  "GPTBot": "#6366f1",
+  "ChatGPT-User": "#86AD94",
+  "PerplexityBot": "#6E8CA8",
+  "ClaudeBot": "#BE9A5E",
+  "OAI-SearchBot": "#9B86AD",
+  "GPTBot": "#CB7E70",
 };
-const AI_BOT_DEFAULT_COLOR = "#64748b";
+const AI_BOT_DEFAULT_COLOR = "#5C636E";
 
 async function renderClientFunnel(env: Env, days: number, config: ClientConfig): Promise<string> {
   const ds = env.AE_DATASET;
@@ -1110,18 +1171,23 @@ ${competitorsHtml}
 
 // ── Client View Header ──
 
-function renderClientHeader(config: ClientConfig, generatedAt: string, days: number, client: string = "virum"): string {
-  return `<div class="header">
-<div>
-  <h1 style="font-size:24px">Your AI Search Performance</h1>
-  <div class="subtitle">${escHtml(config.domain)} — GEO active since ${escHtml(config.activeSince)}</div>
+function renderClientHeader(config: ClientConfig, _generatedAt: string, days: number, client: string = "virum"): string {
+  return `<header class="geo-header">
+<div class="geo-logo">
+  <div class="geo-logo-brand">
+    <span style="font-weight:600;color:var(--tx)">Found</span><span class="geo-logo-dot"></span><span style="color:var(--tx2);font-weight:400">by AI</span>
+  </div>
+  <span class="geo-sep"></span>
+  <div class="geo-domain-wrap">
+    <div class="geo-domain">${escHtml(config.domain)}</div>
+    <div class="geo-domain-sub">GEO aktiv siden ${escHtml(config.activeSince)}</div>
+  </div>
 </div>
-<div class="header-right">
-  <div><span class="live-dot"></span>Live Data</div>
-  <div class="timestamp">Updated: ${escHtml(generatedAt)}</div>
+<div class="geo-header-right">
+  <div class="geo-live"><span class="geo-live-dot"><span></span><span></span></span>Live</div>
+  ${renderTimeNav(days, "client", client, true)}
 </div>
-</div>
-${renderTimeNav(days, "client", client)}`;
+</header>`;
 }
 
 // ── Utilities ──
@@ -1536,79 +1602,108 @@ function renderGeoHealthScoreCard(report: AlignmentReport | null): string {
   const coveragePct  = (coverage / 40) * 100;
   const consistPct   = (consistency / 40) * 100;
   const signalsPct   = (signals / 20) * 100;
-  return `<div class="card" style="display:flex;align-items:center;gap:32px;padding:20px 28px;margin-bottom:24px;flex-wrap:wrap">
-  <div style="text-align:center;min-width:80px">
-    <div style="font-size:56px;font-weight:900;color:${escHtml(grade.color)};line-height:1">${escHtml(String(grade.grade))}</div>
-    <div style="font-size:22px;font-weight:700;color:#f8fafc">${total}</div>
-    <div style="font-size:12px;color:#94a3b8">${escHtml(grade.label_da)}</div>
+  const g = String(grade.grade).toUpperCase();
+  const morandiColor = (g === 'A+' || g === 'A') ? '#86AD94' : g === 'B' ? '#6E8CA8' : '#BE9A5E';
+  return `<div class="card" style="display:flex;align-items:center;gap:32px;padding:24px 28px;margin-bottom:14px;flex-wrap:wrap">
+  <div style="position:relative;width:128px;height:128px;flex-shrink:0">
+    <svg viewBox="0 0 128 128" width="128" height="128" style="display:block;transform:rotate(-90deg)">
+      <circle cx="64" cy="64" r="54" fill="none" stroke="#1F252E" stroke-width="9"/>
+      <circle cx="64" cy="64" r="54" fill="none" stroke="${morandiColor}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(2*Math.PI*54).toFixed(1)}" stroke-dashoffset="${(2*Math.PI*54*(1-total/100)).toFixed(1)}"/>
+    </svg>
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+      <div style="font-weight:600;font-size:38px;letter-spacing:-.04em;line-height:1;color:${morandiColor}">${escHtml(String(grade.grade))}</div>
+      <div style="font-family:'Geist Mono',monospace;font-size:11px;color:var(--tx3);margin-top:3px">${total}/100</div>
+    </div>
   </div>
   <div style="flex:1;min-width:200px">
-    <div style="font-size:13px;font-weight:600;color:#cbd5e1;margin-bottom:10px">GEO Health Score</div>
-    <div style="margin-bottom:6px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:3px"><span>Platformdækning</span><span>${coverage}/40</span></div>
-      <div style="background:#1e293b;border-radius:4px;height:6px"><div style="background:#3b82f6;border-radius:4px;height:6px;width:${coveragePct.toFixed(0)}%"></div></div>
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+      <span style="font-weight:600;font-size:15px;color:var(--tx)">GEO Health Score</span>
+      <span style="font-family:'Geist Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--warn);border:1px solid rgba(201,154,82,.4);padding:2px 7px">${escHtml(grade.label_da)}</span>
     </div>
-    <div style="margin-bottom:6px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:3px"><span>NAP-konsistens</span><span>${consistency}/40</span></div>
-      <div style="background:#1e293b;border-radius:4px;height:6px"><div style="background:#8b5cf6;border-radius:4px;height:6px;width:${consistPct.toFixed(0)}%"></div></div>
-    </div>
-    <div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:3px"><span>Signalkvalitet</span><span>${signals}/20</span></div>
-      <div style="background:#1e293b;border-radius:4px;height:6px"><div style="background:#f59e0b;border-radius:4px;height:6px;width:${signalsPct.toFixed(0)}%"></div></div>
+    <div style="display:flex;flex-direction:column;gap:11px;margin-top:12px">
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--tx2)">Platformdækning</span><span style="font-family:'Geist Mono',monospace;color:var(--tx3)">${coverage}/40</span></div>
+        <div style="height:5px;background:var(--line2);overflow:hidden"><div style="height:100%;width:${coveragePct.toFixed(0)}%;background:var(--blue)"></div></div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--tx2)">NAP-konsistens</span><span style="font-family:'Geist Mono',monospace;color:var(--tx3)">${consistency}/40</span></div>
+        <div style="height:5px;background:var(--line2);overflow:hidden"><div style="height:100%;width:${consistPct.toFixed(0)}%;background:#9B86AD"></div></div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--tx2)">Signalkvalitet</span><span style="font-family:'Geist Mono',monospace;color:var(--tx3)">${signals}/20</span></div>
+        <div style="height:5px;background:var(--line2);overflow:hidden"><div style="height:100%;width:${signalsPct.toFixed(0)}%;background:var(--bright)"></div></div>
+      </div>
     </div>
   </div>
-  <div style="font-size:11px;color:#475569;align-self:flex-end">${escHtml(report.runType)} · ${escHtml(report.generatedAt.slice(0, 10))}</div>
+  <div style="font-family:'Geist Mono',monospace;font-size:11px;color:var(--tx3);align-self:flex-end">${escHtml(report.runType)} · ${escHtml(report.generatedAt.slice(0, 10))}</div>
 </div>`;
 }
 
-function renderBlock6(report: AlignmentReport | null, history: ScoreHistory | null): string {
+function renderBlock6(report: AlignmentReport | null, history: ScoreHistory | null, days = 14): string {
   if (!report) {
-    return `<div class="section"><h2>6. Platform Alignment</h2><div class="card"><div class="empty">No alignment data yet — run <code>pnpm tsx scripts/alignment/run.ts virum</code> to check</div></div></div>`;
+    return `<div class="section"><div class="section-hdr"><span class="section-num">06</span><h2>Platform Alignment</h2><span class="section-rule"></span></div><div class="card"><div class="empty">No alignment data yet — run <code>pnpm tsx scripts/alignment/run.ts virum</code> to check</div></div></div>`;
   }
 
-  const statusColor: Record<string, string> = { ok: '#10b981', warning: '#f59e0b', missing: '#ef4444', error: '#ef4444', unable_to_check: '#64748b', needs_verification: '#64748b' };
+  const statusColor: Record<string, string> = { ok: 'var(--bright)', warning: 'var(--warn)', missing: 'var(--danger)', error: 'var(--danger)', unable_to_check: 'var(--tx3)', needs_verification: 'var(--tx3)' };
 
-  const platformRows = report.platforms.map(p => {
-    const color = statusColor[p.status] ?? '#64748b';
-    const issueHtml = p.issues.length ? `<ul style="margin:4px 0 0 16px;font-size:12px;color:#f59e0b">${p.issues.map(i => `<li>${escHtml(i)}</li>`).join('')}</ul>` : '';
-    const actionHtml = p.actionUrl ? `<a href="${escHtml(p.actionUrl)}" style="font-size:12px;color:#3b82f6;white-space:nowrap">${escHtml(p.actionText_da ?? 'Open →')}</a>` : '';
-    return `<tr>
-      <td style="font-size:18px;width:36px">${escHtml(p.icon)}</td>
-      <td style="font-weight:500">${escHtml(p.name_da)}</td>
-      <td><span style="color:${color};font-size:13px">${escHtml(p.statusText_da)}</span>${issueHtml}</td>
-      <td style="text-align:right">${actionHtml}</td>
-    </tr>`;
+  const platformRowsHtml = report.platforms.map(p => {
+    const color = statusColor[p.status] ?? 'var(--tx3)';
+    const issueHtml = p.issues.length ? `<div style="font-size:12px;color:var(--warn);margin-top:3px">${p.issues.map(i => escHtml(i)).join(' · ')}</div>` : '';
+    const btn = p.actionUrl ? `<a href="${escHtml(p.actionUrl)}" class="btn-outline">${escHtml(p.actionText_da ?? 'Open →')}</a>` : '';
+    return `<div style="display:flex;align-items:flex-start;gap:14px;padding:18px 0;border-bottom:1px solid var(--line2)">
+      <div style="width:34px;height:34px;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:17px">${escHtml(p.icon)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;font-size:14px;color:var(--tx)">${escHtml(p.name_da)}</div>
+        <div style="font-size:13px;color:${color};margin-top:3px">${escHtml(p.statusText_da)}</div>
+        ${issueHtml}
+      </div>
+      ${btn}
+    </div>`;
   }).join('');
 
-  const napRows = report.inconsistencies.filter(c => c.match === 'major_diff' || c.match === 'minor_diff').map(c =>
-    `<tr><td>${escHtml(c.field)}</td><td>${escHtml(c.platform)}</td><td style="color:#ea580c;font-size:13px">${escHtml(c.diffDescription)}</td></tr>`
-  ).join('');
+  const napHtml = (() => {
+    const rows = report.inconsistencies.filter(c => c.match === 'major_diff' || c.match === 'minor_diff');
+    if (!rows.length) return '';
+    return `<div class="card" style="margin-bottom:14px">
+      <h3>NAP-uoverensstemmelser</h3>
+      ${rows.map(c => `<div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line2);font-size:13px"><span style="color:var(--tx3);min-width:80px">${escHtml(c.field)}</span><span style="color:var(--tx2);min-width:100px">${escHtml(c.platform)}</span><span style="color:var(--warn)">${escHtml(c.diffDescription)}</span></div>`).join('')}
+    </div>`;
+  })();
 
-  const actionRows = report.prioritizedActions.slice(0, 5).map(a =>
-    `<tr><td><span class="badge badge-blue">${a.priority}</span></td><td>${escHtml(a.action_da)}</td><td style="color:#64748b;font-size:12px">${escHtml(a.timeEstimate_da)}</td><td style="font-size:12px;color:#94a3b8">${escHtml(a.impactText_da)}</td></tr>`
-  ).join('');
+  const actionListHtml = (() => {
+    const actions = report.prioritizedActions.slice(0, 5);
+    if (!actions.length) return '';
+    return `<div class="card" style="margin-bottom:14px">
+      <h3 style="margin-bottom:4px">Prioriterede handlinger</h3>
+      <div style="font-size:12px;color:var(--tx3);margin-bottom:16px">Hver handling løfter din GEO Health Score.</div>
+      ${actions.map(a => `<div style="display:flex;align-items:flex-start;gap:14px;padding:16px 0;border-bottom:1px solid var(--line2)">
+        <div style="width:28px;height:28px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:'Geist Mono',monospace;font-size:12px;color:var(--tx3)">${a.priority}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;font-size:14px;color:var(--tx)">${escHtml(a.action_da)}</div>
+          <div style="font-size:12px;font-family:'Geist Mono',monospace;color:var(--tx3);margin-top:3px">${escHtml(a.timeEstimate_da)}</div>
+        </div>
+        <div style="font-family:'Geist Mono',monospace;font-size:12px;color:var(--bright);flex-shrink:0">${escHtml(a.impactText_da)}</div>
+      </div>`).join('')}
+    </div>`;
+  })();
 
   // History trend
   let historyHtml = '';
   if (history && history.history.length > 1) {
-    const pts = history.history.slice(-10);
+    const pts = history.history.slice(-Math.max(days, 2));
     const xLabels = pts.map(p => p.date.slice(5));
-    const series = [{ label: 'Total', color: '#3b82f6', points: pts.map((p, i) => ({ x: i, y: p.total })) }];
-    historyHtml = `<div class="card" style="margin-top:20px"><h3>Score History</h3>${svgLineChart(series, xLabels, 600, 180)}</div>`;
+    const series = [{ label: 'Total', color: '#6E8CA8', points: pts.map((p, i) => ({ x: i, y: p.total })) }];
+    historyHtml = `<div class="card" style="margin-bottom:14px"><h3>Score History</h3>${svgLineChart(series, xLabels, 600, 200)}</div>`;
   }
 
   const sameAsHtml = report.sameAsUpdated.length
-    ? `<div style="margin-top:12px;font-size:12px;color:#64748b">sameAs synced: ${report.sameAsUpdated.map(u => `<a href="${escHtml(u)}" style="color:#475569">${escHtml(new URL(u).hostname)}</a>`).join(' · ')}</div>`
+    ? `<div style="font-size:11px;font-family:'Geist Mono',monospace;color:var(--tx3);margin-top:12px">sameAs: ${report.sameAsUpdated.map(u => `<a href="${escHtml(u)}" style="color:var(--tx3)">${escHtml(new URL(u).hostname)}</a>`).join(' · ')}</div>`
     : '';
 
   return `<div class="section" id="alignment">
-<h2>6. Platform Alignment</h2>
-<div class="card" style="margin-bottom:20px">
-  <table><thead><tr><th></th><th>Platform</th><th>Status</th><th></th></tr></thead><tbody>${platformRows}</tbody></table>
-</div>
-${napRows ? `<div class="card" style="margin-bottom:20px"><h3>NAP Inconsistencies</h3><table><thead><tr><th>Field</th><th>Platform</th><th>Problem (DA)</th></tr></thead><tbody>${napRows}</tbody></table></div>` : ''}
-${actionRows ? `<div class="card" style="margin-bottom:20px"><h3>Prioritized Actions</h3><table><thead><tr><th>#</th><th>Action</th><th>Time</th><th>Impact</th></tr></thead><tbody>${actionRows}</tbody></table></div>` : ''}
-${historyHtml}${sameAsHtml}
+<div class="section-hdr"><span class="section-num">06</span><h2>Platform Alignment</h2><span class="section-rule"></span></div>
+<div class="card" style="margin-bottom:14px;padding-bottom:0">${platformRowsHtml}</div>
+${napHtml}${actionListHtml}${historyHtml}${sameAsHtml}
 </div>`;
 }
 
@@ -2104,14 +2199,17 @@ export default {
 ${renderStyles()}
 </head>
 <body>
-<div class="container">
 ${renderClientHeader(config, generatedAt, days, client)}
+<div class="container">
+<p class="page-label">AI Search Performance</p>
+<h1>${escHtml(config.domain)}</h1>
 ${funnel}
 ${results}
 ${renderClientLayer3(alignReport, dnsReadyAt, reportIndex, client)}
-<div style="text-align:center;padding:24px 0;color:#475569;font-size:12px">
-  Powered by GEO Reforge
-</div>
+<footer class="geo-footer">
+  <div style="display:flex;align-items:center;font-size:13px"><span style="font-weight:600;color:var(--tx2)">Found</span><span style="display:inline-block;width:4px;height:4px;background:var(--accent);transform:rotate(45deg);margin:0 5px"></span><span style="color:var(--tx3)">by AI</span></div>
+  <span class="timestamp">GEO Edge Proxy · Dashboard v3</span>
+</footer>
 </div>
 </body>
 </html>`;
@@ -2145,18 +2243,21 @@ ${renderClientLayer3(alignReport, dnsReadyAt, reportIndex, client)}
 ${renderStyles()}
 </head>
 <body>
-<div class="container">
 ${renderHeader(config, generatedAt, days, client)}
+<div class="container">
+<p class="page-label">GEO Effect</p>
+<h1>Dashboard</h1>
 ${renderGeoHealthScoreCard(alignReportOps)}
 ${block1}
 ${block2}
 ${block3}
 ${block4}
 ${block5}
-${renderBlock6(alignReportOps, alignHistoryOps)}
-<div style="text-align:center;padding:24px 0;color:#475569;font-size:12px">
-  GEO Reforge Edge Proxy — Dashboard v2.1
-</div>
+${renderBlock6(alignReportOps, alignHistoryOps, days)}
+<footer class="geo-footer">
+  <div style="display:flex;align-items:center;font-size:13px"><span style="font-weight:600;color:var(--tx2)">Found</span><span style="display:inline-block;width:4px;height:4px;background:var(--accent);transform:rotate(45deg);margin:0 5px"></span><span style="color:var(--tx3)">by AI</span></div>
+  <span class="timestamp">GEO Edge Proxy · Dashboard v3</span>
+</footer>
 </div>
 </body>
 </html>`;
