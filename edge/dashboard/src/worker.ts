@@ -143,11 +143,14 @@ function svgDonutChart(
   const cx = 100, cy = 100, outerR = 86, innerR = 57, GAP = 2.5;
   const dominant = data.reduce((a, b) => a.value > b.value ? a : b);
   const toR = (a: number) => (a * Math.PI) / 180;
-  let svg = `<svg id="${chartId}" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">`;
+  const domLbl = dominant.label.toUpperCase();
+  let svg = `<svg id="${chartId}" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" style="cursor:pointer">`;
   svg += `<circle cx="${cx}" cy="${cy}" r="${(outerR + innerR) / 2}" fill="none" stroke="#1B2028" stroke-width="${outerR - innerR}"/>`;
   let cum = -90;
-  for (const d of data) {
+  for (let di = 0; di < data.length; di++) {
+    const d = data[di];
     if (d.value === 0) continue;
+    const lbl = d.label.toUpperCase();
     const seg = (d.value / total) * 360;
     const sA = cum + GAP / 2, eA = cum + seg - GAP / 2;
     cum += seg;
@@ -156,7 +159,7 @@ function svgDonutChart(
     const ox2 = cx + outerR * Math.cos(toR(eA)), oy2 = cy + outerR * Math.sin(toR(eA));
     const ix1 = cx + innerR * Math.cos(toR(eA)), iy1 = cy + innerR * Math.sin(toR(eA));
     const ix2 = cx + innerR * Math.cos(toR(sA)), iy2 = cy + innerR * Math.sin(toR(sA));
-    svg += `<path d="M${ox1.toFixed(1)},${oy1.toFixed(1)} A${outerR},${outerR} 0 ${large},1 ${ox2.toFixed(1)},${oy2.toFixed(1)} L${ix1.toFixed(1)},${iy1.toFixed(1)} A${innerR},${innerR} 0 ${large},0 ${ix2.toFixed(1)},${iy2.toFixed(1)} Z" fill="${d.color}"/>`;
+    svg += `<path data-seg="${cum}" data-idx="${di}" onmouseenter="geoDonut('${chartId}',${d.value},'${lbl}',${di})" onmouseleave="geoDonut('${chartId}',${dominant.value},'${domLbl}',-1)" d="M${ox1.toFixed(1)},${oy1.toFixed(1)} A${outerR},${outerR} 0 ${large},1 ${ox2.toFixed(1)},${oy2.toFixed(1)} L${ix1.toFixed(1)},${iy1.toFixed(1)} A${innerR},${innerR} 0 ${large},0 ${ix2.toFixed(1)},${iy2.toFixed(1)} Z" fill="${d.color}"/>`;
   }
   svg += `<text id="${chartId}-val" x="${cx}" y="${cy - 4}" text-anchor="middle" dominant-baseline="auto" font-weight="600" font-size="34" fill="#E8E9E5" font-family="Geist,-apple-system,sans-serif">${dominant.value}</text>`;
   svg += `<text id="${chartId}-lbl" x="${cx}" y="${cy + 17}" text-anchor="middle" dominant-baseline="auto" font-size="9" fill="#9298A1" font-family="Geist Mono,monospace" letter-spacing="1">${escHtml(dominant.label.toUpperCase())}</text>`;
@@ -172,7 +175,7 @@ function svgLineChart(
   activationIdx = -1,
   interactive = false
 ): string {
-  const legendH = interactive ? 0 : 28;
+  const legendH = interactive || series.length <= 1 ? 0 : 28;
   const extraBottom = activationIdx >= 0 ? 16 : 0;
   const totalH = height + extraBottom;
   const pad = { top: 8 + legendH, right: 20, bottom: 30, left: 50 };
@@ -190,8 +193,8 @@ function svgLineChart(
 
   let svgBody = `<rect width="${width}" height="${totalH}" fill="#12151A"/>`;
 
-  // Static legend (non-interactive only)
-  if (!interactive) {
+  // Static legend (non-interactive, multi-series only)
+  if (!interactive && series.length > 1) {
     let legendX = pad.left;
     for (const s of series) {
       svgBody += `<circle cx="${legendX + 5}" cy="16" r="5" fill="${s.color}"/>`;
@@ -422,12 +425,53 @@ tr:hover td{background:var(--panel2)}
 .insight-banner{background:linear-gradient(135deg,rgba(88,123,102,.12),rgba(88,123,102,.03));border:1px solid rgba(134,173,148,.3);padding:20px;margin-bottom:14px}
 .insight-banner h3{color:var(--tx);font-size:15px;margin-bottom:6px;font-weight:600}
 .insight-banner p{color:var(--tx2);font-size:13px;line-height:1.5}
+.geo-bar{transition:width .7s cubic-bezier(.4,0,.2,1)}
+[data-seg]{transition:opacity .2s,transform .2s;transform-box:fill-box;transform-origin:center}
 .geo-footer{margin-top:40px;padding-top:24px;border-top:1px solid var(--line2);display:flex;align-items:center;justify-content:space-between;gap:16px}
 @media(max-width:768px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}.pie-container{flex-direction:column}}
 </style>
 <script>
 function geoToggle(cid,sid){var chart=document.getElementById(cid);if(!chart)return;var allG=chart.querySelectorAll('.geo-series');var allB=chart.querySelectorAll('.geo-lb');var target=document.getElementById(cid+'-'+sid);var isSolo=target&&target.getAttribute('data-solo')==='1';if(isSolo){allG.forEach(function(g){g.style.display='';g.removeAttribute('data-solo')});allB.forEach(function(b){b.style.opacity='1'})}else{allG.forEach(function(g){g.style.display='none';g.removeAttribute('data-solo')});allB.forEach(function(b){b.style.opacity='0.35'});if(target){target.style.display='';target.setAttribute('data-solo','1')}var ab=chart.querySelector('.geo-lb[data-sid="'+sid+'"]');if(ab)ab.style.opacity='1'}}
-function geoDonut(cid,val,lbl){var v=document.getElementById(cid+'-val');var l=document.getElementById(cid+'-lbl');if(v)v.textContent=val;if(l)l.textContent=lbl;}
+function geoDonut(cid,val,lbl,idx){
+  var v=document.getElementById(cid+'-val');var l=document.getElementById(cid+'-lbl');
+  if(v)v.textContent=val;if(l)l.textContent=lbl;
+  var svg=document.getElementById(cid);if(!svg)return;
+  var segs=svg.querySelectorAll('[data-seg]');
+  var lbs=document.querySelectorAll('[data-lb="'+cid+'"]');
+  var active=idx!=null&&idx>=0;
+  segs.forEach(function(s){var si=parseInt(s.getAttribute('data-idx')||'-1');s.style.opacity=active&&si!==idx?'0.3':'1';s.style.transform=active&&si===idx?'scale(1.06)':'none';});
+  lbs.forEach(function(lb,i){
+    var on=!active||i===idx;
+    lb.style.opacity=on?'1':'0.4';
+    var ll=lb.querySelector('.legend-lbl');var lv=lb.querySelector('.legend-val');
+    if(ll)ll.style.color=on?'var(--tx)':'';if(lv)lv.style.color=on?'var(--tx)':'';
+  });
+}
+function geoAnim(){
+  var reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  var io=new IntersectionObserver(function(ents){
+    ents.forEach(function(e){if(!e.isIntersecting)return;io.unobserve(e.target);if(e.target.__anim)e.target.__anim();});
+  },{threshold:0.25});
+  document.querySelectorAll('.stat-value').forEach(function(el){
+    var orig=el.textContent.trim();
+    var m=orig.match(/^([^\\d]*)(\\d[\\d,.]*)([^\\d]*)$/);if(!m)return;
+    var pre=m[1],suf=m[3],num=parseFloat(m[2].replace(/,/g,''));if(!num)return;
+    if(reduce)return;
+    el.textContent=pre+'0'+suf;
+    el.__anim=function(){var t0=performance.now(),dur=1400;
+      requestAnimationFrame(function tick(t){var p=Math.min((t-t0)/dur,1),e=p*p;
+        el.textContent=pre+Math.round(e*num).toLocaleString()+suf;
+        if(p<1)requestAnimationFrame(tick);else el.textContent=orig;});};
+    io.observe(el);
+  });
+  document.querySelectorAll('.geo-bar').forEach(function(el){
+    var w=el.style.width;if(!w||reduce)return;
+    el.style.transition='none';el.style.width='0';el.offsetWidth;el.style.transition='';
+    el.__anim=function(){el.style.width=w;};
+    io.observe(el);
+  });
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',geoAnim);else geoAnim();
 </script>`;
 }
 
@@ -583,7 +627,7 @@ async function renderBlock1(env: Env, days: number, config: ClientConfig): Promi
     <div class="pie-container">
       <div class="pie-chart">${svgDonutChart(pieData, 'geo-dn-traffic')}</div>
       <div class="pie-legend">
-        ${pieData.map((d) => `<div class="legend-item" onmouseenter="geoDonut('geo-dn-traffic','${d.value}','${d.label.toUpperCase()}')" onmouseleave="geoDonut('geo-dn-traffic','${dominant.value}','${dominant.label.toUpperCase()}')"><div class="legend-dot" style="background:${d.color}"></div><span class="legend-lbl">${escHtml(d.label)}</span><span class="legend-val">${fmt(d.value)}</span></div>`).join("")}
+        ${pieData.map((d, i) => `<div class="legend-item" data-lb="geo-dn-traffic" data-idx="${i}" onmouseenter="geoDonut('geo-dn-traffic','${d.value}','${d.label.toUpperCase()}',${i})" onmouseleave="geoDonut('geo-dn-traffic','${dominant.value}','${dominant.label.toUpperCase()}',-1)"><div class="legend-dot" style="background:${d.color}"></div><span class="legend-lbl">${escHtml(d.label)}</span><span class="legend-val">${fmt(d.value)}</span></div>`).join("")}
         <div style="font-size:11px;color:var(--tx3);margin-top:4px;line-height:1.5">+ ${fmt(visitorTotal)} besøgende serveret transparent via samme proxy.</div>
       </div>
     </div>
@@ -660,7 +704,7 @@ async function renderBlock2(env: Env, days: number): Promise<string> {
         const pct = totalHtml > 0 ? (s.value / totalHtml) * 100 : 0;
         return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line2);font-size:13px">
           <span style="flex:1;color:var(--tx2)">${s.label}</span>
-          <div style="width:160px;height:4px;background:var(--line2);overflow:hidden;flex-shrink:0"><div style="height:100%;width:${pct.toFixed(0)}%;background:${s.color}"></div></div>
+          <div style="width:160px;height:4px;background:var(--line2);overflow:hidden;flex-shrink:0"><div class="geo-bar" style="height:100%;width:${pct.toFixed(0)}%;background:${s.color}"></div></div>
           <span style="font-family:'Geist Mono',monospace;font-size:12px;min-width:36px;text-align:right;color:var(--tx)">${fmt(s.value)}</span>
         </div>`;
       })
@@ -758,8 +802,7 @@ async function renderBlock3(env: Env, client: string): Promise<string> {
     const deltaHtml2 = mentionDelta > 0
       ? ` <span style="font-family:'Geist Mono',monospace;font-size:10px;color:var(--bright)">+${mentionDelta}</span>`
       : mentionDelta < 0 ? ` <span style="font-family:'Geist Mono',monospace;font-size:10px;color:var(--danger)">${mentionDelta}</span>` : '';
-    const selfInList = prompts.competitors.some(c => c.name.toLowerCase().includes(client.toLowerCase()));
-    const selfRow = selfInList ? '' : `<tr style="border-top:2px solid var(--line2)">
+    const selfRow = `<tr style="border-top:2px solid var(--line2)">
       <td style="color:var(--tx3)">—</td>
       <td style="color:var(--bright);font-weight:500">${escHtml(client)} <span style="font-family:'Geist Mono',monospace;font-size:10px;border:1px solid var(--accent);color:var(--accent);padding:1px 5px;margin-left:4px">dig</span></td>
       <td>${myMentioned}${deltaHtml2}</td>
@@ -816,7 +859,7 @@ async function renderBlock3(env: Env, client: string): Promise<string> {
       const isMine = d.domain.includes("virumakupunktur");
       return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line2);font-size:13px">
         <span style="flex:1;${isMine ? 'color:var(--bright);font-weight:500' : 'color:var(--tx2)'}">${escHtml(d.domain)}</span>
-        <div style="width:140px;height:4px;background:var(--line2);overflow:hidden;flex-shrink:0"><div style="height:100%;width:${pct.toFixed(0)}%;background:${isMine ? 'var(--bright)' : 'var(--neutral)'}"></div></div>
+        <div style="width:140px;height:4px;background:var(--line2);overflow:hidden;flex-shrink:0"><div class="geo-bar" style="height:100%;width:${pct.toFixed(0)}%;background:${isMine ? 'var(--bright)' : 'var(--neutral)'}"></div></div>
         <span style="font-family:'Geist Mono',monospace;font-size:12px;min-width:28px;text-align:right;color:var(--tx2)">${d.citations}</span>
       </div>`;
     }).join('');
@@ -839,11 +882,11 @@ ${statsHtml}
 <div class="grid grid-2" style="margin-top:20px">
   <div class="card" style="display:flex;flex-direction:column">
     <h3>Mine domæne-citationer</h3>
-    <div style="overflow-y:auto;max-height:300px;flex:1">${myUrlsBody}</div>
+    <div style="overflow-y:auto;max-height:300px;flex:1;padding-right:14px">${myUrlsBody}</div>
   </div>
   <div class="card" style="display:flex;flex-direction:column">
     <h3>Mest citerede domæner</h3>
-    <div style="overflow-y:auto;max-height:300px;flex:1">${topDomainsBody}</div>
+    <div style="overflow-y:auto;max-height:300px;flex:1;padding-right:14px">${topDomainsBody}</div>
   </div>
 </div>
 </div>`;
@@ -1134,12 +1177,12 @@ async function renderClientResults(env: Env, client: string): Promise<string> {
     const maxMentions = Math.max(...topN.map(c => c.mentioned + c.cited), 1);
     competitorsHtml = `<div class="card" style="margin-top:20px">
   <h3>How You Compare to Competitors</h3>
-  <div style="font-size:12px;color:#64748b;margin-bottom:12px">AI visibility ranking in your market</div>
-  <div class="status-row" style="border-bottom:2px solid #334155">
-    <span style="color:#10b981;font-weight:600">Your Business</span>
+  <div style="font-size:12px;color:var(--tx3);margin-bottom:12px">AI visibility ranking in your market</div>
+  <div class="status-row" style="border-bottom:2px solid var(--line2)">
+    <span style="color:var(--bright);font-weight:600">Your Business</span>
     <span style="display:flex;align-items:center;gap:8px">
-      <span style="width:160px"><div class="bar"><div class="bar-fill" style="width:${prompts ? ((prompts.brandMentioned + prompts.domainCited) / maxMentions) * 100 : 0}%;background:#10b981"></div></div></span>
-      <span style="min-width:80px;text-align:right;color:#10b981">${prompts ? prompts.brandMentioned + prompts.domainCited : 0} mentions</span>
+      <span style="width:160px"><div class="bar"><div class="bar-fill" style="width:${prompts ? ((prompts.brandMentioned + prompts.domainCited) / maxMentions) * 100 : 0}%;background:var(--bright)"></div></div></span>
+      <span style="min-width:80px;text-align:right;color:var(--bright)">${prompts ? prompts.brandMentioned + prompts.domainCited : 0} mentions</span>
     </span>
   </div>
   ${topN.map((c) => {
@@ -1148,8 +1191,8 @@ async function renderClientResults(env: Env, client: string): Promise<string> {
     return `<div class="status-row">
       <span>${escHtml(c.name)}</span>
       <span style="display:flex;align-items:center;gap:8px">
-        <span style="width:160px"><div class="bar"><div class="bar-fill" style="width:${pct}%;background:#3b82f6"></div></div></span>
-        <span style="min-width:80px;text-align:right">${total} mentions</span>
+        <span style="width:160px"><div class="bar"><div class="bar-fill geo-bar" style="width:${pct}%;background:var(--blue)"></div></div></span>
+        <span style="min-width:80px;text-align:right;color:var(--tx2)">${total} mentions</span>
       </span>
     </div>`;
   }).join("")}
@@ -1623,15 +1666,15 @@ function renderGeoHealthScoreCard(report: AlignmentReport | null): string {
     <div style="display:flex;flex-direction:column;gap:11px;margin-top:12px">
       <div>
         <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--tx2)">Platformdækning</span><span style="font-family:'Geist Mono',monospace;color:var(--tx3)">${coverage}/40</span></div>
-        <div style="height:5px;background:var(--line2);overflow:hidden"><div style="height:100%;width:${coveragePct.toFixed(0)}%;background:var(--blue)"></div></div>
+        <div style="height:5px;background:var(--line2);overflow:hidden"><div class="geo-bar" style="height:100%;width:${coveragePct.toFixed(0)}%;background:var(--blue)"></div></div>
       </div>
       <div>
         <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--tx2)">NAP-konsistens</span><span style="font-family:'Geist Mono',monospace;color:var(--tx3)">${consistency}/40</span></div>
-        <div style="height:5px;background:var(--line2);overflow:hidden"><div style="height:100%;width:${consistPct.toFixed(0)}%;background:#9B86AD"></div></div>
+        <div style="height:5px;background:var(--line2);overflow:hidden"><div class="geo-bar" style="height:100%;width:${consistPct.toFixed(0)}%;background:#9B86AD"></div></div>
       </div>
       <div>
         <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--tx2)">Signalkvalitet</span><span style="font-family:'Geist Mono',monospace;color:var(--tx3)">${signals}/20</span></div>
-        <div style="height:5px;background:var(--line2);overflow:hidden"><div style="height:100%;width:${signalsPct.toFixed(0)}%;background:var(--bright)"></div></div>
+        <div style="height:5px;background:var(--line2);overflow:hidden"><div class="geo-bar" style="height:100%;width:${signalsPct.toFixed(0)}%;background:var(--bright)"></div></div>
       </div>
     </div>
   </div>
@@ -1639,7 +1682,7 @@ function renderGeoHealthScoreCard(report: AlignmentReport | null): string {
 </div>`;
 }
 
-function renderBlock6(report: AlignmentReport | null, history: ScoreHistory | null, days = 14): string {
+function renderBlock6(report: AlignmentReport | null, history: ScoreHistory | null, days = 14, reportIndex: ReportIndexEntry[] = [], clientId = 'virum'): string {
   if (!report) {
     return `<div class="section"><div class="section-hdr"><span class="section-num">06</span><h2>Platform Alignment</h2><span class="section-rule"></span></div><div class="card"><div class="empty">No alignment data yet — run <code>pnpm tsx scripts/alignment/run.ts virum</code> to check</div></div></div>`;
   }
@@ -1700,17 +1743,30 @@ function renderBlock6(report: AlignmentReport | null, history: ScoreHistory | nu
     ? `<div style="font-size:11px;font-family:'Geist Mono',monospace;color:var(--tx3);margin-top:12px">sameAs: ${report.sameAsUpdated.map(u => `<a href="${escHtml(u)}" style="color:var(--tx3)">${escHtml(new URL(u).hostname)}</a>`).join(' · ')}</div>`
     : '';
 
+  const reportIndexHtml = reportIndex.length > 0 ? `
+<div class="card" style="margin-top:14px">
+  <h3 style="margin-bottom:12px">Handlingsrapporter</h3>
+  ${reportIndex.map(r => `
+  <a href="/report/${escHtml(clientId)}/${escHtml(r.date)}" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--panel2);border:1px solid var(--line2);text-decoration:none;margin-bottom:6px">
+    <div>
+      <div style="font-size:14px;font-weight:500;color:var(--tx)">${escHtml(r.title)}</div>
+      <div style="font-size:11px;font-family:'Geist Mono',monospace;color:var(--tx3);margin-top:3px">${escHtml(r.date.slice(0,4))}-${escHtml(r.date.slice(4,6))}-${escHtml(r.date.slice(6,8))}</div>
+    </div>
+    <span style="color:var(--blue);font-size:14px">→</span>
+  </a>`).join('')}
+</div>` : '';
+
   return `<div class="section" id="alignment">
 <div class="section-hdr"><span class="section-num">06</span><h2>Platform Alignment</h2><span class="section-rule"></span></div>
 <div class="card" style="margin-bottom:14px;padding-bottom:0">${platformRowsHtml}</div>
-${napHtml}${actionListHtml}${historyHtml}${sameAsHtml}
+${napHtml}${actionListHtml}${historyHtml}${sameAsHtml}${reportIndexHtml}
 </div>`;
 }
 
 function renderClientLayer3(report: AlignmentReport | null, dnsReadyAt: string | null, reportIndex: ReportIndexEntry[], clientId: string): string {
   const dnsStatus = dnsReadyAt
-    ? `<div style="font-size:13px;color:#10b981;margin-bottom:16px">✅ GEO Layer aktiv siden ${escHtml(dnsReadyAt.slice(0, 10))}</div>`
-    : `<div style="font-size:13px;color:#94a3b8;margin-bottom:16px">⏳ Afventer DNS-opsætning (typisk 24-48t)</div>`;
+    ? `<div style="font-size:13px;color:var(--bright);margin-bottom:16px">✅ GEO Layer aktiv siden ${escHtml(dnsReadyAt.slice(0, 10))}</div>`
+    : `<div style="font-size:13px;color:var(--tx3);margin-bottom:16px">⏳ Afventer DNS-opsætning (typisk 24-48t)</div>`;
 
   if (!report) {
     return `<div class="section">
@@ -1720,78 +1776,51 @@ ${dnsStatus}
 </div>`;
   }
 
-  const { total, grade, coverage, consistency, signals } = report.score;
-  const circ = 289.0; // 2π×46
-  // NAP is only measurable from Google Maps; if Google isn't found, consistency is
-  // structurally 0 (unmeasured, not "wrong") — show it as pending, not a red empty ring.
-  const googleStatus = report.platforms.find(p => p.id === 'google')?.status;
-  const napPending = consistency === 0 && googleStatus !== 'ok';
-  const ring = (score: number, max: number, color: string, label: string, attribution: string, pending = false) => {
-    const pct = pending ? 0 : Math.min(score / max, 1);
-    const offset = circ * (1 - pct);
-    const stroke = pending ? '#475569' : color;
-    const centerText = pending ? '—' : `${score}/${max}`;
-    return `<a href="#client-actions" style="text-decoration:none">
-  <div style="text-align:center;transition:transform 0.18s ease;cursor:pointer" onmouseover="this.style.transform='scale(1.07)'" onmouseout="this.style.transform='scale(1)'">
-    <svg width="120" height="120" viewBox="0 0 120 120">
-      <circle cx="60" cy="60" r="46" fill="none" stroke="#334155" stroke-width="10"/>
-      <circle cx="60" cy="60" r="46" fill="none" stroke="${stroke}" stroke-width="10"
-        stroke-dasharray="${circ}" stroke-dashoffset="${offset.toFixed(1)}"
-        stroke-linecap="round" transform="rotate(-90 60 60)"/>
-      <text x="60" y="57" text-anchor="middle" fill="#f8fafc" font-size="18" font-weight="700" font-family="system-ui,-apple-system,sans-serif">${centerText}</text>
-    </svg>
-    <div style="font-size:13px;font-weight:600;color:#cbd5e1;margin:6px 0 2px">${label}</div>
-    <div style="font-size:11px;color:#64748b;line-height:1.4">${attribution}</div>
-  </div></a>`;
-  };
-
-  const statusIcon: Record<string, string> = { ok: '✅', warning: '⚠️', missing: '❌', unable_to_check: '—', error: '⚠️', needs_verification: '🔍' };
-  const greyStatus = (s: string) => s === 'unable_to_check' || s === 'needs_verification';
-  const platformList = report.platforms.map(p =>
-    `<div class="status-row"><span>${escHtml(p.icon)} ${escHtml(p.name_da)}</span><span style="font-size:13px;color:${p.status === 'ok' ? '#10b981' : greyStatus(p.status) ? '#64748b' : p.status === 'missing' ? '#ef4444' : '#f59e0b'}">${statusIcon[p.status] ?? '—'} ${escHtml(p.statusText_da)}</span></div>`
-  ).join('');
+  const clientStatusColor: Record<string, string> = { ok: 'var(--bright)', warning: 'var(--warn)', missing: 'var(--danger)', error: 'var(--danger)', unable_to_check: 'var(--tx3)', needs_verification: 'var(--tx3)' };
+  const platformList = report.platforms.map(p => {
+    const color = clientStatusColor[p.status] ?? 'var(--tx3)';
+    const issueHtml = p.issues.length ? `<div style="font-size:12px;color:var(--warn);margin-top:3px">${p.issues.map(i => escHtml(i)).join(' · ')}</div>` : '';
+    const btn = p.actionUrl ? `<a href="${escHtml(p.actionUrl)}" class="btn-outline">${escHtml(p.actionText_da ?? 'Open →')}</a>` : '';
+    return `<div style="display:flex;align-items:flex-start;gap:14px;padding:18px 0;border-bottom:1px solid var(--line2)">
+      <div style="width:34px;height:34px;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:17px">${escHtml(p.icon)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;font-size:14px;color:var(--tx)">${escHtml(p.name_da)}</div>
+        <div style="font-size:13px;color:${color};margin-top:3px">${escHtml(p.statusText_da)}</div>
+        ${issueHtml}
+      </div>
+      ${btn}
+    </div>`;
+  }).join('');
 
   const topActions = report.prioritizedActions.slice(0, 3).map((a, i) =>
-    `<div style="background:#0f172a;border-radius:8px;padding:14px 16px;margin-bottom:8px">
-      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
-        <span style="background:#3b82f6;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">${i + 1}</span>
-        <span style="font-size:14px;font-weight:600;color:#f8fafc">${escHtml(a.action_da)}</span>
+    `<div style="display:flex;align-items:flex-start;gap:14px;padding:16px 0;border-bottom:1px solid var(--line2)">
+      <div style="width:28px;height:28px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:'Geist Mono',monospace;font-size:12px;color:var(--tx3)">${i + 1}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;font-size:14px;color:var(--tx)">${escHtml(a.action_da)}</div>
+        <div style="font-size:12px;font-family:'Geist Mono',monospace;color:var(--tx3);margin-top:3px">${escHtml(a.timeEstimate_da)}</div>
+        ${a.url ? `<a href="${escHtml(a.url)}" style="font-size:12px;color:var(--blue);margin-top:4px;display:inline-block">Gå til platform →</a>` : ''}
       </div>
-      <div style="font-size:12px;color:#64748b;padding-left:32px">${escHtml(a.timeEstimate_da)} · ${escHtml(a.impactText_da)}</div>
-      ${a.url ? `<div style="padding-left:32px;margin-top:4px"><a href="${escHtml(a.url)}" style="font-size:12px;color:#3b82f6">Gå til platform →</a></div>` : ''}
+      <div style="font-family:'Geist Mono',monospace;font-size:12px;color:var(--bright);flex-shrink:0">${escHtml(a.impactText_da)}</div>
     </div>`
   ).join('');
 
   return `<div class="section">
 <div class="layer-label">Layer 3 — Platformtilpasning</div>
 ${dnsStatus}
-<div class="card" style="margin-bottom:20px">
-  <div style="display:flex;align-items:center;gap:40px;flex-wrap:wrap;justify-content:center;padding:8px 0 4px">
-    <div style="text-align:center;min-width:80px">
-      <div style="font-size:72px;font-weight:900;color:${escHtml(grade.color)};line-height:1">${escHtml(String(grade.grade))}</div>
-      <div style="font-size:13px;color:#94a3b8;margin-top:6px">${total}/100</div>
-      <div style="font-size:12px;color:#64748b">${escHtml(grade.label_da)}</div>
-    </div>
-    <div style="display:flex;gap:32px;flex-wrap:wrap;justify-content:center">
-      ${ring(coverage, 40, '#3b82f6', 'Platformdækning', 'Du kan forbedre')}
-      ${ring(consistency, 40, '#8b5cf6', 'NAP-konsistens', napPending ? 'Afventer Google-profil' : 'Du kan forbedre', napPending)}
-      ${ring(signals, 20, '#f59e0b', 'Signalkvalitet', '✓ Sat af os')}
-    </div>
-  </div>
-</div>
-<div class="card" style="margin-bottom:20px"><h3>Platformstatus</h3>${platformList}</div>
-${topActions ? `<h2 id="client-actions" style="font-size:16px;color:#f8fafc;margin:0 0 12px;scroll-margin-top:24px">Anbefalede handlinger</h2>${topActions}` : ''}
+${renderGeoHealthScoreCard(report)}
+<div class="card" style="margin-bottom:14px;padding-bottom:0"><h3 style="margin-bottom:0">Platformstatus</h3>${platformList}</div>
+${topActions ? `<div class="card" id="client-actions" style="margin-bottom:14px;scroll-margin-top:24px"><h3 style="margin-bottom:4px">Anbefalede handlinger</h3><div style="font-size:12px;color:var(--tx3);margin-bottom:16px">Hver handling løfter din GEO Health Score.</div>${topActions}</div>` : ''}
 <div style="font-size:11px;color:#475569;margin-top:12px">Rapport genereret ${escHtml(report.generatedAt.slice(0, 10))} · Næste check om 2 uger</div>
 ${reportIndex.length > 0 ? `
-<div class="card" style="margin-top:20px">
-  <h3 style="margin-bottom:12px">行动报告</h3>
+<div class="card" style="margin-top:14px">
+  <h3 style="margin-bottom:12px">Handlingsrapporter</h3>
   ${reportIndex.map(r => `
-  <a href="/report/${escHtml(clientId)}/${escHtml(r.date)}" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#0f172a;border-radius:8px;text-decoration:none;margin-bottom:6px">
+  <a href="/report/${escHtml(clientId)}/${escHtml(r.date)}" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--panel2);border:1px solid var(--line2);text-decoration:none;margin-bottom:6px">
     <div>
-      <div style="font-size:14px;font-weight:600;color:#f8fafc">${escHtml(r.title)}</div>
-      <div style="font-size:12px;color:#64748b;margin-top:2px">${escHtml(r.date.slice(0,4))}-${escHtml(r.date.slice(4,6))}-${escHtml(r.date.slice(6,8))}</div>
+      <div style="font-size:14px;font-weight:500;color:var(--tx)">${escHtml(r.title)}</div>
+      <div style="font-size:11px;font-family:'Geist Mono',monospace;color:var(--tx3);margin-top:3px">${escHtml(r.date.slice(0,4))}-${escHtml(r.date.slice(4,6))}-${escHtml(r.date.slice(6,8))}</div>
     </div>
-    <span style="color:#3b82f6;font-size:14px">→</span>
+    <span style="color:var(--blue);font-size:14px">→</span>
   </a>`).join('')}
 </div>` : ''}
 </div>`;
@@ -2208,7 +2237,7 @@ ${results}
 ${renderClientLayer3(alignReport, dnsReadyAt, reportIndex, client)}
 <footer class="geo-footer">
   <div style="display:flex;align-items:center;font-size:13px"><span style="font-weight:600;color:var(--tx2)">Found</span><span style="display:inline-block;width:4px;height:4px;background:var(--accent);transform:rotate(45deg);margin:0 5px"></span><span style="color:var(--tx3)">by AI</span></div>
-  <span class="timestamp">GEO Edge Proxy · Dashboard v3</span>
+  <span class="timestamp">Designed by <a href="https://yi.studio" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;border-bottom:1px solid var(--line2)">yi.studio</a></span>
 </footer>
 </div>
 </body>
@@ -2217,13 +2246,13 @@ ${renderClientLayer3(alignReport, dnsReadyAt, reportIndex, client)}
       return new Response(html, {
         headers: {
           "Content-Type": "text/html;charset=utf-8",
-          "Cache-Control": "public, max-age=300",
+          "Cache-Control": "private, no-store",
         },
       });
     }
 
     // Ops view: all blocks
-    const [block1, block2, block3, block4, block5, alignReportOps, alignHistoryOps] = await Promise.all([
+    const [block1, block2, block3, block4, block5, alignReportOps, alignHistoryOps, reportIndexRawOps] = await Promise.all([
       renderBlock1(env, days, config),
       renderBlock2(env, days),
       renderBlock3(env, client),
@@ -2231,7 +2260,9 @@ ${renderClientLayer3(alignReport, dnsReadyAt, reportIndex, client)}
       renderBlock5(env, days),
       loadAlignmentReport(env, client),
       loadScoreHistory(env, client),
+      env.DASHBOARD_KV.get(`report_index:${client}`, "text"),
     ]);
+    const reportIndexOps: ReportIndexEntry[] = reportIndexRawOps ? (() => { try { return JSON.parse(reportIndexRawOps) as ReportIndexEntry[]; } catch { return []; } })() : [];
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -2253,10 +2284,10 @@ ${block2}
 ${block3}
 ${block4}
 ${block5}
-${renderBlock6(alignReportOps, alignHistoryOps, days)}
+${renderBlock6(alignReportOps, alignHistoryOps, days, reportIndexOps, client)}
 <footer class="geo-footer">
   <div style="display:flex;align-items:center;font-size:13px"><span style="font-weight:600;color:var(--tx2)">Found</span><span style="display:inline-block;width:4px;height:4px;background:var(--accent);transform:rotate(45deg);margin:0 5px"></span><span style="color:var(--tx3)">by AI</span></div>
-  <span class="timestamp">GEO Edge Proxy · Dashboard v3</span>
+  <span class="timestamp">Designed by <a href="https://yi.studio" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;border-bottom:1px solid var(--line2)">yi.studio</a></span>
 </footer>
 </div>
 </body>
@@ -2265,7 +2296,7 @@ ${renderBlock6(alignReportOps, alignHistoryOps, days)}
     return new Response(html, {
       headers: {
         "Content-Type": "text/html;charset=utf-8",
-        "Cache-Control": "public, max-age=300",
+        "Cache-Control": "private, no-store",
       },
     });
   },
