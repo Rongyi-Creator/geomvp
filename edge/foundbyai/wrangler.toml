@@ -4,7 +4,7 @@ compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-SITE_URL = "https://foundbyai.dk"
+SITE_URL = "https://go.foundbyai.dk"
 GEO_PROXY_IP = "76.76.21.21"
 DASHBOARD_URL = "https://geo-dashboard.blake-designing.workers.dev"
 OPS_EMAILS = "hello.rongyi@gmail.com"
