@@ -890,6 +890,45 @@ async function handleCheck(req: Request, env: Env): Promise<Response> {
   }
 }
 
+async function handleStart(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const { url = '', email = '' } = (await req.json()) as { url?: string; email?: string };
+  const cleanEmail = email.trim().toLowerCase();
+  const domain = url.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail) || !domain.includes('.')) {
+    return json({ ok: true }); // no enumeration / no detail leak
+  }
+  const slug = deriveSlug(domain);
+  if (!/^[a-z0-9-]+$/.test(slug)) return json({ ok: true });
+
+  ctx.waitUntil((async () => {
+    await addProduct(cleanEmail, slug, env.DASHBOARD_KV);
+    if (!(await getProduct(slug, env.DASHBOARD_KV))) {
+      const p: Product = { slug, domain, email: cleanEmail, status: 'draft', createdAt: new Date().toISOString() };
+      await saveProduct(p, env.DASHBOARD_KV);
+    }
+    // Kick off extraction (cached under draft:<slug>); ignore failures here.
+    try {
+      const draft = await extractContent(domain, env);
+      await env.DASHBOARD_KV.put(`draft:${slug}`, JSON.stringify(draft));
+    } catch { /* extraction retried on the setup page */ }
+    const t = await mintLoginToken(cleanEmail, env);
+    await sendLoginEmail(cleanEmail, `${env.SITE_URL}/auth/verify?t=${t}`, env);
+  })());
+
+  return json({ ok: true });
+}
+
+async function handleWaitlist(req: Request, env: Env): Promise<Response> {
+  const { url = '', email = '' } = (await req.json()) as { url?: string; email?: string };
+  const cleanEmail = email.trim().toLowerCase();
+  const domain = url.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail) && domain.includes('.')) {
+    const platform = new URL(req.url).searchParams.get('platform') || 'ukendt';
+    await putWaitlist(cleanEmail, domain, platform, env.DASHBOARD_KV);
+  }
+  return json({ ok: true });
+}
+
 // ── Auth / Login handlers ────────────────────────────────────────────────────
 
 function renderLoginPage(sent = false): string {
@@ -991,6 +1030,10 @@ export default {
       return handleDnsStatus(req, env, ctx);
     if (req.method === 'GET' && p0 === 'api' && p1 === 'check')
       return handleCheck(req, env);
+    if (req.method === 'POST' && p0 === 'api' && p1 === 'start')
+      return handleStart(req, env, ctx);
+    if (req.method === 'POST' && p0 === 'api' && p1 === 'waitlist')
+      return handleWaitlist(req, env);
 
     if (req.method === 'GET' && p0 === 'login') return handleLoginPage();
     if (req.method === 'POST' && p0 === 'api' && p1 === 'auth' && parts[2] === 'request')

@@ -14,7 +14,7 @@
   var navEl = $('#nav');
   var heroEl = $('#hero');
 
-  var state = { phase: 'idle', result: null, loadingStep: 0, showError: false, platform: '', waitDone: false };
+  var state = { phase: 'idle', result: null, loadingStep: 0, showError: false, platform: '', waitDone: false, startDone: false, startEmail: '' };
   var timers = [];
   var autoRetried = false;
   function clearTimers() { timers.forEach(clearTimeout); timers = []; }
@@ -205,13 +205,22 @@
   function resultCard() {
     var r = state.result, p = state.platform;
     if (r === 'compatible') {
+      if (state.startDone) {
+        return '<div style="max-width:460px; width:100%; margin:28px auto 0; padding:24px 26px; background:#fff; border:1.5px solid var(--accent); border-radius:14px; text-align:left; box-shadow:0 8px 30px -10px rgba(88,123,102,0.4); animation:fbai-rise .45s cubic-bezier(.2,.7,.2,1) both;">' +
+          '<div style="display:flex; align-items:center; gap:9px; margin-bottom:8px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; font-size:13px;">✓</span><span style="font-family:\'Geist\',sans-serif; font-weight:600; font-size:15px;">Tjek din indbakke</span></div>' +
+          '<p style="margin:0; font-size:14px; color:#46453E; line-height:1.5;">Vi har sendt et login-link til <strong>' + (state.startEmail || '') + '</strong>. Klik på linket for at fortsætte opsætningen.</p>' +
+        '</div>';
+      }
       return '<div style="max-width:460px; width:100%; margin:28px auto 0; padding:24px 26px; background:#fff; border:1.5px solid var(--accent); border-radius:14px; text-align:left; box-shadow:0 8px 30px -10px rgba(88,123,102,0.4); animation:fbai-rise .45s cubic-bezier(.2,.7,.2,1) both;">' +
         '<div style="display:flex; align-items:center; gap:9px; margin-bottom:12px;">' +
           '<span style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; font-size:13px;">✓</span>' +
           '<span style="font-family:\'Geist\',sans-serif; font-weight:600; font-size:15px;">Klar til optimering</span>' +
         '</div>' +
         '<p style="margin:0 0 18px; font-size:14px; color:#46453E; line-height:1.5;"><strong style="color:#1A1A17;">0/5 AI-signaler fundet</strong> · Platform: ' + (p || 'one.com') + ' · Klar til optimering</p>' +
-        '<button id="start-trial" style="display:inline-flex; align-items:center; gap:6px; padding:12px 20px; background:var(--accent); color:#fff; font-family:\'Geist\',sans-serif; font-weight:600; font-size:14px; border-radius:10px;">Start gratis prøveperiode →</button>' +
+        '<form id="start-form" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">' +
+          '<input id="start-email" type="email" required placeholder="din@email.dk" style="flex:1 1 180px; min-width:0; padding:11px 14px; border:1px solid #DCDBD3; border-radius:10px; outline:none; font-size:14px; background:#FAFAF8;">' +
+          '<button type="submit" style="flex:0 1 auto; padding:11px 18px; background:var(--accent); color:#fff; font-family:\'Geist\',sans-serif; font-weight:600; font-size:13px; border-radius:10px;">Send mig mit login →</button>' +
+        '</form>' +
       '</div>';
     }
     if (r === 'incompatible') {
@@ -252,12 +261,26 @@
   }
 
   function wireFeedback() {
-    var trial = $('#start-trial', feedback);
-    if (trial) { hover(trial, { background: PAL.strong }, { background: 'var(--accent)' }); trial.addEventListener('click', startTrial); }
+    var sf = $('#start-form', feedback);
+    if (sf) sf.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var email = ($('#start-email', feedback) || {}).value || '';
+      state.startEmail = email;
+      var url = normalize(input.value);
+      fetch('/api/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: url, email: email }) });
+      state.startDone = true; render();
+    });
     var retry = $('#retry', feedback);
     if (retry) { hover(retry, { background: '#000' }, { background: '#1A1A17' }); retry.addEventListener('click', function () { var u = normalize(input.value); if (u) runCheck(u); }); }
     var wf = $('#wait-form', feedback);
-    if (wf) wf.addEventListener('submit', function (e) { e.preventDefault(); state.waitDone = true; render(); });
+    if (wf) wf.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var email = ($('#wait-email', feedback) || {}).value || '';
+      var url = normalize(input.value);
+      var plat = encodeURIComponent(state.platform || 'ukendt');
+      fetch('/api/waitlist?platform=' + plat, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: url, email: email }) });
+      state.waitDone = true; render();
+    });
   }
 
   /* ---------- check flow ---------- */
@@ -265,7 +288,7 @@
 
   function runCheck(url) {
     clearTimers();
-    state.phase = 'loading'; state.result = null; state.loadingStep = 0; state.waitDone = false;
+    state.phase = 'loading'; state.result = null; state.loadingStep = 0; state.waitDone = false; state.startDone = false; state.startEmail = '';
     render();
     timers.push(setTimeout(function () { state.loadingStep = 1; render(); }, 250));
     timers.push(setTimeout(function () { state.loadingStep = 2; render(); }, 1000));
@@ -297,12 +320,6 @@
         finish(r, platformFallback(url, r));
       }
     });
-  }
-
-  function startTrial() {
-    // Matches prototype: scroll to pricing (conversion is lead-magnet, not self-serve checkout).
-    var el = document.getElementById('pris');
-    if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 70, behavior: 'smooth' });
   }
 
   /* ---------- form wiring ---------- */
