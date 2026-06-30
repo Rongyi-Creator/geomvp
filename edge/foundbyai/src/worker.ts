@@ -10,7 +10,7 @@ import {
 } from './lib/account.ts';
 import {
   mintLoginToken, consumeLoginToken, createSession, destroySession,
-  getIdentity, sessionCookie, clearCookie,
+  getIdentity, sessionCookie, clearCookie, randomHex,
 } from './lib/auth.ts';
 
 interface Env {
@@ -48,6 +48,8 @@ interface DraftContent {
 }
 
 const TOKEN_TTL = 7 * 24 * 3600; // 7 days in seconds
+
+function randomHexLocal(n: number): string { return randomHex(n); }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -215,6 +217,18 @@ async function extractContent(domain: string, env: Env): Promise<DraftContent> {
 
 // ── Route Handlers ──────────────────────────────────────────────────────────
 
+async function requireOwnedProduct(req: Request, env: Env, slug: string): Promise<{ id: { email: string; isOps: boolean }; product: Product } | Response> {
+  if (!/^[a-z0-9-]+$/.test(slug)) return json({ error: 'bad_slug' }, 400);
+  const id = await getIdentity(req, env);
+  if (!id) return json({ error: 'unauthorized' }, 401);
+  const product = await getProduct(slug, env.DASHBOARD_KV);
+  if (!product) return json({ error: 'not_found' }, 404);
+  const acc = await getAccount(id.email, env.DASHBOARD_KV);
+  const owns = id.isOps || (acc?.productSlugs.includes(slug) ?? false);
+  if (!owns) return json({ error: 'not_found' }, 404);
+  return { id, product };
+}
+
 async function handleActivatePage(token: string, env: Env): Promise<Response> {
   const data = await getToken(token, env);
   if (!data) return html(renderErrorPage('Linket er udløbet eller ugyldigt. Kontakt os for et nyt link.'), 404);
@@ -226,17 +240,14 @@ async function handleActivatePage(token: string, env: Env): Promise<Response> {
 }
 
 async function handleExtract(req: Request, env: Env): Promise<Response> {
-  const { token } = await req.json() as { token: string };
-  const data = await getToken(token, env);
-  if (!data) return json({ error: 'invalid_token' }, 400);
-
-  // Return cached draft if exists
-  const cached = await getDraft(token, env);
-  if (cached) return json(cached);
-
+  const { slug } = (await req.json()) as { slug: string };
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) return guard;
+  const cached = await env.DASHBOARD_KV.get(`draft:${slug}`);
+  if (cached) return new Response(cached, { headers: { 'Content-Type': 'application/json' } });
   try {
-    const draft = await extractContent(data.domain, env);
-    await env.DASHBOARD_KV.put(`draft:${token}`, JSON.stringify(draft));
+    const draft = await extractContent(guard.product.domain, env);
+    await env.DASHBOARD_KV.put(`draft:${slug}`, JSON.stringify(draft));
     return json(draft);
   } catch {
     return json({ error: 'extraction_failed' }, 500);
@@ -244,13 +255,10 @@ async function handleExtract(req: Request, env: Env): Promise<Response> {
 }
 
 async function handleConfirm(req: Request, env: Env): Promise<Response> {
-  const body = await req.json() as { token: string } & Partial<DraftContent>;
-  const { token, ...fields } = body;
-
-  const data = await getToken(token, env);
-  if (!data) return json({ error: 'invalid_token' }, 400);
-
-  // Persist confirmed draft (overwrites extracted version with user edits)
+  const body = (await req.json()) as { slug: string } & Partial<DraftContent>;
+  const { slug, ...fields } = body;
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) return guard;
   const draft: DraftContent = {
     businessName: fields.businessName ?? '',
     address: fields.address ?? '',
@@ -259,84 +267,62 @@ async function handleConfirm(req: Request, env: Env): Promise<Response> {
     services: Array.isArray(fields.services) ? fields.services : [],
     extractedAt: new Date().toISOString(),
   };
-  await env.DASHBOARD_KV.put(`draft:${token}`, JSON.stringify(draft));
-
-  data.status = 'content_confirmed';
-  await saveToken(token, data, env);
-
+  await env.DASHBOARD_KV.put(`draft:${slug}`, JSON.stringify(draft));
+  guard.product.status = 'content_confirmed';
+  await saveProduct(guard.product, env.DASHBOARD_KV);
   return json({ ok: true });
 }
 
 async function handleCheckout(req: Request, env: Env): Promise<Response> {
-  const { token } = await req.json() as { token: string };
-  const data = await getToken(token, env);
-  if (!data) return json({ error: 'invalid_token' }, 400);
-  if (data.status !== 'content_confirmed') return json({ error: 'confirm_first' }, 400);
+  const { slug } = (await req.json()) as { slug: string };
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) return guard;
+  const product = guard.product;
+  if (product.status !== 'content_confirmed') return json({ error: 'confirm_first' }, 400);
 
-  const successUrl = `${env.SITE_URL}/success?session_id={CHECKOUT_SESSION_ID}&token=${token}`;
-  const cancelUrl = `${env.SITE_URL}/activate/${token}`;
-
+  const successUrl = `${env.SITE_URL}/success?session_id={CHECKOUT_SESSION_ID}&slug=${slug}`;
+  const cancelUrl = `${env.SITE_URL}/app/p/${slug}/setup`;
   const params = new URLSearchParams({
     mode: 'subscription',
     'payment_method_types[]': 'card',
     'line_items[0][price]': env.STRIPE_PRICE_ID,
     'line_items[0][quantity]': '1',
     'subscription_data[trial_period_days]': '30',
-    'customer_email': data.email,
+    'customer_email': product.email,
     'success_url': successUrl,
     'cancel_url': cancelUrl,
-    'metadata[token]': token,
+    'metadata[slug]': slug,
   });
-
   const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
   });
-
-  const session = await stripeRes.json() as { url?: string; error?: { message: string } };
+  const session = (await stripeRes.json()) as { url?: string; error?: { message: string } };
   if (!session.url) return json({ error: session.error?.message ?? 'stripe_error' }, 500);
-
   return json({ url: session.url });
 }
 
 async function handleSuccess(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const sessionId = url.searchParams.get('session_id');
-  const token = url.searchParams.get('token');
-  if (!sessionId || !token) return html(renderErrorPage('Ugyldigt link.'), 400);
+  const slug = url.searchParams.get('slug') ?? '';
+  if (!sessionId || !/^[a-z0-9-]+$/.test(slug)) return html(renderErrorPage('Ugyldigt link.'), 400);
+  const product = await getProduct(slug, env.DASHBOARD_KV);
+  if (!product) return html(renderErrorPage('Produkt ikke fundet.'), 400);
 
-  const data = await getToken(token, env);
-  if (!data) return html(renderErrorPage('Token udløbet.'), 400);
-
-  // Verify session with Stripe
   const stripeRes = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}`, {
     headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
   });
-  const session = await stripeRes.json() as {
-    status?: string;
-    payment_status?: string;
-    customer?: string;
-    subscription?: string;
-    metadata?: { token?: string };
-  };
+  const session = (await stripeRes.json()) as { status?: string; customer?: string; subscription?: string };
+  if (session.status !== 'complete') return Response.redirect(`${env.SITE_URL}/app/p/${slug}/setup`, 302);
 
-  if (session.status !== 'complete') {
-    return Response.redirect(`${env.SITE_URL}/activate/${token}`, 302);
-  }
-
-  data.status = 'dns_pending';
-  if (session.customer) data.stripeCustomerId = session.customer;
-  if (session.subscription) data.stripeSubscriptionId = session.subscription;
-  await saveToken(token, data, env);
-
-  // Add to dns polling queue
-  await env.DASHBOARD_KV.put(`dns_pending:${token}`, data.domain, { expirationTtl: TOKEN_TTL });
-
-  return Response.redirect(`${env.SITE_URL}/activate/${token}`, 302);
+  product.status = 'trial_pending_dns';
+  if (session.customer) product.stripeCustomerId = session.customer;
+  if (session.subscription) product.stripeSubscriptionId = session.subscription;
+  await saveProduct(product, env.DASHBOARD_KV);
+  await env.DASHBOARD_KV.put(`dns_pending:${slug}`, product.domain, { expirationTtl: 7 * 24 * 3600 });
+  return Response.redirect(`${env.SITE_URL}/app/p/${slug}/setup`, 302);
 }
 
 async function handleWebhook(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -373,46 +359,49 @@ async function handleWebhook(req: Request, env: Env, ctx: ExecutionContext): Pro
 }
 
 async function handleDnsStatus(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  const token = new URL(req.url).searchParams.get('token');
-  if (!token) return json({ error: 'missing_token' }, 400);
-
-  const data = await getToken(token, env);
-  if (!data) return json({ error: 'invalid_token' }, 400);
-
-  if (data.status === 'active') return json({ active: true });
-
-  const ips = await resolveARecord(data.domain);
+  const slug = new URL(req.url).searchParams.get('slug') ?? '';
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) return guard;
+  if (guard.product.status === 'active') return json({ active: true });
+  const ips = await resolveARecord(guard.product.domain);
   if (ips.includes(env.GEO_PROXY_IP)) {
-    ctx.waitUntil(activateClient(token, data, env));
+    ctx.waitUntil(activateClient(slug, env));
     return json({ active: true });
   }
-
   return json({ active: false, resolvedIps: ips });
 }
 
 // ── Activation Logic ─────────────────────────────────────────────────────────
 
-async function activateClient(token: string, data: TokenData, env: Env) {
-  data.status = 'active';
-  data.activatedAt = new Date().toISOString();
-  await saveToken(token, data, env);
+async function activateClient(slug: string, env: Env) {
+  const product = await getProduct(slug, env.DASHBOARD_KV);
+  if (!product) return;
+  product.status = 'active';
+  product.activatedAt = new Date().toISOString();
+  await saveProduct(product, env.DASHBOARD_KV);
 
-  // Write GEO config (same KV namespace, key = config:{domain})
-  const draft = await getDraft(token, env);
-  await env.DASHBOARD_KV.put(`config:${data.domain}`, JSON.stringify({
-    domain: data.domain,
-    activeSince: data.activatedAt,
-    ...draft,
+  const draftRaw = await env.DASHBOARD_KV.get(`draft:${slug}`);
+  const draft = draftRaw ? (JSON.parse(draftRaw) as DraftContent) : null;
+
+  // Dashboard config keyed by slug (dashboard worker reads config:<slug>).
+  await env.DASHBOARD_KV.put(`config:${slug}`, JSON.stringify({
+    domain: product.domain,
+    activeSince: product.activatedAt,
+    ...(draft ?? {}),
   }));
+  // Mint the per-product dashboard token used by the dashboard worker's client auth.
+  let clientToken = await env.DASHBOARD_KV.get(`client_token:${slug}`);
+  if (!clientToken) {
+    clientToken = randomHexLocal(32);
+    await env.DASHBOARD_KV.put(`client_token:${slug}`, clientToken);
+  }
+  await env.DASHBOARD_KV.delete(`dns_pending:${slug}`);
 
-  // Remove from dns polling queue
-  await env.DASHBOARD_KV.delete(`dns_pending:${token}`);
-
-  // Send confirmation email
-  await sendActivationEmail(data.email, data.domain, draft?.businessName ?? data.domain, env);
+  const dashLink = `${env.DASHBOARD_URL}/?view=client&client=${slug}&token=${clientToken}`;
+  await sendActivationEmail(product.email, product.domain, draft?.businessName ?? product.domain, env, dashLink);
 }
 
-async function sendActivationEmail(to: string, domain: string, name: string, env: Env) {
+async function sendActivationEmail(to: string, domain: string, name: string, env: Env, dashLink: string) {
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -423,21 +412,21 @@ async function sendActivationEmail(to: string, domain: string, name: string, env
       from: 'Found by AI <hej@foundbyai.dk>',
       to: [to],
       subject: `✅ ${name} er nu synlig for AI — Found by AI`,
-      html: `
-        <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 16px">
-          <h1 style="color:#15803d;font-size:22px">🎉 Dit GEO Layer er nu aktivt!</h1>
-          <p style="color:#374151;line-height:1.6">
-            <strong>${esc(name)}</strong> (${esc(domain)}) er nu synlig for ChatGPT, Perplexity og Claude.<br><br>
-            AI-søgemaskiner kan nu læse din virksomhedsinfo og anbefale dig til kunder.
-          </p>
-          <p style="color:#374151;line-height:1.6">
-            Du vil modtage en månedlig rapport med data om, hvornår AI-bots besøger din side og citerer din virksomhed.
-          </p>
-          <p style="color:#6b7280;font-size:14px;margin-top:32px">
-            Found by AI · <a href="https://foundbyai.dk" style="color:#2563eb">foundbyai.dk</a>
-          </p>
-        </div>
-      `,
+      html:
+        `<div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 16px">` +
+        `<h1 style="color:#15803d;font-size:22px">🎉 Dit GEO Layer er nu aktivt!</h1>` +
+        `<p style="color:#374151;line-height:1.6">` +
+        `<strong>${esc(name)}</strong> (${esc(domain)}) er nu synlig for ChatGPT, Perplexity og Claude.<br><br>` +
+        `AI-søgemaskiner kan nu læse din virksomhedsinfo og anbefale dig til kunder.` +
+        `</p>` +
+        `<p style="color:#374151;line-height:1.6">` +
+        `Du vil modtage en månedlig rapport med data om, hvornår AI-bots besøger din side og citerer din virksomhed.` +
+        `</p>` +
+        `<p style="margin:24px 0"><a href="${dashLink}" style="background:#587B66;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:600">Åbn dit dashboard →</a></p>` +
+        `<p style="color:#6b7280;font-size:14px;margin-top:32px">` +
+        `Found by AI · <a href="https://foundbyai.dk" style="color:#2563eb">foundbyai.dk</a>` +
+        `</p>` +
+        `</div>`,
     }),
   });
 }
@@ -446,21 +435,14 @@ async function sendActivationEmail(to: string, domain: string, name: string, env
 
 async function checkPendingDns(env: Env) {
   const list = await env.DASHBOARD_KV.list({ prefix: 'dns_pending:' });
-
   await Promise.all(
     list.keys.map(async ({ name }) => {
-      const token = name.replace('dns_pending:', '');
+      const slug = name.slice('dns_pending:'.length);
       const domain = await env.DASHBOARD_KV.get(name);
       if (!domain) return;
-
       const ips = await resolveARecord(domain);
-      if (ips.includes(env.GEO_PROXY_IP)) {
-        const data = await getToken(token, env);
-        if (data && data.status !== 'active') {
-          await activateClient(token, data, env);
-        }
-      }
-    })
+      if (ips.includes(env.GEO_PROXY_IP)) await activateClient(slug, env);
+    }),
   );
 }
 
