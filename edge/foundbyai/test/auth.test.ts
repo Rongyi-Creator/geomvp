@@ -4,7 +4,7 @@ import { MemKV } from '../src/lib/kvmock.ts';
 import { saveAccount } from '../src/lib/account.ts';
 import {
   isOpsEmail, getCookie, mintLoginToken, consumeLoginToken,
-  createSession, getIdentity, sessionCookie,
+  createSession, destroySession, getIdentity, sessionCookie,
 } from '../src/lib/auth.ts';
 
 test('isOpsEmail matches case-insensitively within CSV', () => {
@@ -40,4 +40,13 @@ test('getIdentity returns null without a valid session', async () => {
   const kv = new MemKV() as unknown as KVNamespace;
   const req = new Request('https://x.dk');
   assert.equal(await getIdentity(req, { DASHBOARD_KV: kv, OPS_EMAILS: '' }), null);
+});
+
+test('destroySession deletes the session keyed by cookie', async () => {
+  const kv = new MemKV() as unknown as KVNamespace;
+  const sid = await createSession('u@x.dk', kv);
+  assert.equal(await kv.get(`session:${sid}`), 'u@x.dk');
+  const req = new Request('https://x/', { headers: { Cookie: `fbai_session=${sid}` } });
+  await destroySession(req, kv);
+  assert.equal(await kv.get(`session:${sid}`), null);
 });

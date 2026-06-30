@@ -6,12 +6,14 @@
 
 import {
   deriveSlug, addProduct, getProduct, saveProduct,
-  getAccount, putWaitlist, type Product,
+  getAccount, putWaitlist, dashboardUrl, citationCount, productsForIdentity, type Product,
+  setSubIndex, applySubscriptionEvent,
 } from './lib/account.ts';
 import {
   mintLoginToken, consumeLoginToken, createSession, destroySession,
   getIdentity, sessionCookie, clearCookie, randomHex,
 } from './lib/auth.ts';
+import { appShell, productCard, billingRow } from './lib/view.ts';
 
 interface Env {
   DASHBOARD_KV: KVNamespace;
@@ -23,6 +25,7 @@ interface Env {
   SITE_URL: string;    // https://foundbyai.dk
   GEO_PROXY_IP: string; // 76.76.21.21
   DASHBOARD_URL: string; // customer dashboard origin
+  DASHBOARD_TOKEN: string; // master ops token for dashboard worker (?view=ops)
   OPS_EMAILS: string;
 }
 
@@ -75,14 +78,6 @@ async function getToken(token: string, env: Env): Promise<TokenData | null> {
   const data = JSON.parse(raw) as TokenData;
   if (new Date(data.expiresAt) < new Date()) return null;
   return data;
-}
-
-async function saveToken(token: string, data: TokenData, env: Env) {
-  // Use remaining time from expiresAt so KV TTL never extends beyond the app-level expiry.
-  const remainingSecs = Math.max(60, Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000));
-  await env.DASHBOARD_KV.put(`token:${token}`, JSON.stringify(data), {
-    expirationTtl: remainingSecs,
-  });
 }
 
 async function resolveARecord(domain: string): Promise<string[]> {
@@ -318,6 +313,7 @@ async function handleSuccess(req: Request, env: Env): Promise<Response> {
   product.status = 'trial_pending_dns';
   if (session.customer) product.stripeCustomerId = session.customer;
   if (session.subscription) product.stripeSubscriptionId = session.subscription;
+  if (session.subscription) await setSubIndex(session.subscription, slug, env.DASHBOARD_KV);
   await saveProduct(product, env.DASHBOARD_KV);
   await env.DASHBOARD_KV.put(`dns_pending:${slug}`, product.domain, { expirationTtl: 7 * 24 * 3600 });
   return Response.redirect(`${env.SITE_URL}/app/p/${slug}/setup`, 302);
@@ -326,33 +322,39 @@ async function handleSuccess(req: Request, env: Env): Promise<Response> {
 async function handleWebhook(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const sig = req.headers.get('stripe-signature') ?? '';
   const payload = await req.text();
-
   if (!(await verifyStripeSignature(payload, sig, env.STRIPE_WEBHOOK_SECRET))) {
     return new Response('Bad signature', { status: 400 });
   }
-
-  const event = JSON.parse(payload) as {
-    type: string;
-    data: { object: Record<string, unknown> };
-  };
+  const event = JSON.parse(payload) as { type: string; data: { object: Record<string, unknown> } };
+  const obj = event.data.object;
 
   if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    const token = (session['metadata'] as Record<string, string> | undefined)?.['token'];
-    if (token) {
+    const slug = (obj['metadata'] as Record<string, string> | undefined)?.['slug'];
+    if (slug && /^[a-z0-9-]+$/.test(slug)) {
       ctx.waitUntil((async () => {
-        const data = await getToken(token, env);
-        if (data && data.status !== 'dns_pending' && data.status !== 'active') {
-          data.status = 'dns_pending';
-          if (session['customer']) data.stripeCustomerId = String(session['customer']);
-          if (session['subscription']) data.stripeSubscriptionId = String(session['subscription']);
-          await saveToken(token, data, env);
-          await env.DASHBOARD_KV.put(`dns_pending:${token}`, data.domain, { expirationTtl: TOKEN_TTL });
+        const product = await getProduct(slug, env.DASHBOARD_KV);
+        if (product && product.status !== 'active' && product.status !== 'trial_pending_dns') {
+          product.status = 'trial_pending_dns';
+          if (obj['customer']) product.stripeCustomerId = String(obj['customer']);
+          if (obj['subscription']) {
+            product.stripeSubscriptionId = String(obj['subscription']);
+            await setSubIndex(String(obj['subscription']), slug, env.DASHBOARD_KV);
+          }
+          await saveProduct(product, env.DASHBOARD_KV);
+          await env.DASHBOARD_KV.put(`dns_pending:${slug}`, product.domain, { expirationTtl: TOKEN_TTL });
         }
       })());
     }
+  } else if (event.type === 'customer.subscription.deleted') {
+    const subId = String(obj['id'] ?? '');
+    if (subId) ctx.waitUntil(applySubscriptionEvent('deleted', subId, env.DASHBOARD_KV));
+  } else if (event.type === 'invoice.payment_failed') {
+    const subId = String(obj['subscription'] ?? '');
+    if (subId) ctx.waitUntil(applySubscriptionEvent('payment_failed', subId, env.DASHBOARD_KV));
+  } else if (event.type === 'invoice.paid') {
+    const subId = String(obj['subscription'] ?? '');
+    if (subId) ctx.waitUntil(applySubscriptionEvent('recovered', subId, env.DASHBOARD_KV));
   }
-
   return new Response('ok');
 }
 
@@ -948,7 +950,7 @@ async function sendLoginEmail(to: string, link: string, env: Env): Promise<void>
     body: JSON.stringify({
       from: 'Found by AI <hej@foundbyai.dk>',
       to: [to],
-      subject: 'Dit login-link til Found by AI',
+      subject: `Dit login-link til Found by AI · ${new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })}`,
       html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:32px 16px">
         <h1 style="font-size:20px;color:#1A1A17">Log ind på Found by AI</h1>
         <p style="color:#46453E;line-height:1.6">Klik på knappen for at logge ind. Linket udløber om 15 minutter.</p>
@@ -1018,46 +1020,102 @@ async function handleProductPage(req: Request, env: Env, slug: string): Promise<
     if (guard.status === 401) return new Response(null, { status: 302, headers: { Location: '/login' } });
     return html(renderErrorPage('Produktet blev ikke fundet.'), 404);
   }
-  return appProductRedirect(slug, env);
+  return appProductRedirect(slug, env, guard.id.isOps);
 }
 
-async function appProductRedirect(slug: string, env: Env): Promise<Response> {
+async function appProductRedirect(slug: string, env: Env, isOps: boolean): Promise<Response> {
   const product = await getProduct(slug, env.DASHBOARD_KV);
   if (product && product.status === 'active') {
-    const token = await env.DASHBOARD_KV.get(`client_token:${slug}`);
-    const loc = token
-      ? `${env.DASHBOARD_URL}/?view=client&client=${slug}&token=${token}`
-      : `${env.DASHBOARD_URL}/?view=client&client=${slug}`;
+    const clientToken = await env.DASHBOARD_KV.get(`client_token:${slug}`);
+    const loc = dashboardUrl(
+      { base: env.DASHBOARD_URL, opsToken: env.DASHBOARD_TOKEN, clientToken },
+      slug, isOps,
+    );
     return new Response(null, { status: 302, headers: { Location: loc } });
   }
   return new Response(null, { status: 302, headers: { Location: `/app/p/${slug}/setup` } });
+}
+
+async function handleProfile(req: Request, env: Env): Promise<Response> {
+  const id = await getIdentity(req, env);
+  if (!id) return new Response(null, { status: 302, headers: { Location: '/login' } });
+  const role = id.isOps ? 'Ops-konto' : 'Kundekonto';
+  const body = `<div class="card"><div class="meta">
+    <div class="dom">${id.email.replace(/[&<>"]/g, '')}</div>
+    <div class="metric">${role}</div>
+  </div><a class="cta ghost" href="/api/auth/logout">Log ud</a></div>`;
+  return html(appShell({ title: 'Profil', heading: 'Profil', body, active: 'profile' }));
+}
+
+async function handleBilling(req: Request, env: Env): Promise<Response> {
+  const id = await getIdentity(req, env);
+  if (!id) return new Response(null, { status: 302, headers: { Location: '/login' } });
+  const products = await productsForIdentity(id, env.DASHBOARD_KV);
+  const body = products.length
+    ? products.map(p => billingRow(p.slug, p)).join('')
+    : `<p class="empty">Ingen abonnementer endnu.</p>`;
+  return html(appShell({ title: 'Abonnement', heading: 'Abonnement', body, active: 'billing' }));
+}
+
+async function handleBillingPortal(req: Request, env: Env): Promise<Response> {
+  const id = await getIdentity(req, env);
+  if (!id) return json({ error: 'unauthorized' }, 401);
+  let slug = '';
+  const ct = req.headers.get('content-type') || '';
+  try {
+    if (ct.includes('application/json')) slug = ((await req.json()) as { slug?: string }).slug ?? '';
+    else slug = String((await req.formData()).get('slug') ?? '');
+  } catch { slug = ''; }
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) return guard;
+  const customer = guard.product.stripeCustomerId;
+  if (!customer) return html(renderErrorPage('Intet abonnement at administrere endnu.'), 400);
+
+  const params = new URLSearchParams({ customer, return_url: `${env.SITE_URL}/app/billing` });
+  const res = await fetch('https://api.stripe.com/v1/billing_portal/sessions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  const session = (await res.json()) as { url?: string; error?: { message: string } };
+  if (!session.url) return html(renderErrorPage('Kunne ikke åbne betalingsportal. Prøv igen.'), 502);
+  return new Response(null, { status: 302, headers: { Location: session.url } });
 }
 
 async function handleApp(req: Request, env: Env): Promise<Response> {
   const id = await getIdentity(req, env);
   if (!id) return new Response(null, { status: 302, headers: { Location: '/login' } });
 
-  // Ops or multi-product: minimal functional list (styled center is Milestone 2).
   let slugs: string[];
   if (id.isOps) {
-    const list = await env.DASHBOARD_KV.list({ prefix: 'config:' });
-    slugs = list.keys.map(k => k.name.slice('config:'.length));
+    const list = await env.DASHBOARD_KV.list({ prefix: 'product:' });
+    slugs = list.keys.map(k => k.name.slice('product:'.length));
   } else {
     slugs = (await getAccount(id.email, env.DASHBOARD_KV))?.productSlugs ?? [];
   }
 
   const only = slugs[0];
   if (!id.isOps && slugs.length === 1 && only) {
-    return appProductRedirect(only, env);
+    return appProductRedirect(only, env, id.isOps);
   }
-  const items = slugs.map(s => `<li><a href="/app/p/${s}" style="color:#86AD94">${s}</a></li>`).join('');
-  return html(`<!DOCTYPE html><html lang="da"><head><meta charset="utf-8"><meta name="robots" content="noindex">
-<title>Mine websites — Found by AI</title></head>
-<body style="font-family:-apple-system,sans-serif;background:#0A0D10;color:#E0DED8;padding:40px">
-<h1 style="font-size:20px">${id.isOps ? 'Alle websites (Ops)' : 'Mine websites'}</h1>
-<ul style="line-height:2">${items || '<li>Ingen endnu.</li>'}</ul>
-<p><a href="/api/auth/logout" style="color:#9CA29C">Log ud</a></p>
-</body></html>`);
+
+  const cards: string[] = [];
+  for (const s of slugs) {
+    const product = await getProduct(s, env.DASHBOARD_KV);
+    if (!product) continue;
+    const metric = product.status === 'active'
+      ? (await citationCount(s, env.DASHBOARD_KV) !== null
+          ? `${await citationCount(s, env.DASHBOARD_KV)} AI-citater registreret`
+          : 'AI-lag aktivt')
+      : null;
+    cards.push(productCard(s, product, metric));
+  }
+  const body = cards.length ? cards.join('') : `<p class="empty">Ingen websites endnu.</p>`;
+  return html(appShell({
+    title: 'Mine websites',
+    heading: id.isOps ? 'Alle websites (Ops)' : 'Mine websites',
+    body, active: 'sites',
+  }));
 }
 
 export default {
@@ -1086,6 +1144,8 @@ export default {
       return handleStart(req, env, ctx);
     if (req.method === 'POST' && p0 === 'api' && p1 === 'waitlist')
       return handleWaitlist(req, env);
+    if (req.method === 'POST' && p0 === 'api' && p1 === 'billing' && parts[2] === 'portal')
+      return handleBillingPortal(req, env);
 
     if (req.method === 'GET' && p0 === 'login') return handleLoginPage();
     if (req.method === 'POST' && p0 === 'api' && p1 === 'auth' && parts[2] === 'request')
@@ -1096,6 +1156,10 @@ export default {
       return handleLogout(req, env);
 
     if (req.method === 'GET' && p0 === 'app' && !p1) return handleApp(req, env);
+    if (req.method === 'GET' && p0 === 'app' && p1 === 'billing' && !parts[2])
+      return handleBilling(req, env);
+    if (req.method === 'GET' && p0 === 'app' && p1 === 'profile' && !parts[2])
+      return handleProfile(req, env);
     if (req.method === 'GET' && p0 === 'app' && p1 === 'p' && parts[2] && parts[3] === 'setup')
       return handleSetupPage(req, env, parts[2]);
     if (req.method === 'GET' && p0 === 'app' && p1 === 'p' && parts[2] && !parts[3])
