@@ -22,8 +22,8 @@ These make the just-shipped M2 code actually work at runtime. Code being merged 
 
 | # | Item | Status | Command / where |
 |---|------|--------|-----------------|
-| 1.1 | Deploy worker from `main` | 🔧 | `cd edge/foundbyai && wrangler deploy` |
-| 1.2 | Set `DASHBOARD_TOKEN` secret (= the dashboard worker's `DASHBOARD_TOKEN` value) | 🔧 | `cd edge/foundbyai && wrangler secret put DASHBOARD_TOKEN` — **without this the Ops→`view=ops` redirect is inert** (dry-run/tsc cannot catch a missing secret; same class as M1's `env` vs `env.DASHBOARD_KV` bug) |
+| 1.1 | Deploy worker from `main` | ✅ | Deployed 2026-06-30, version `fb80c3c3` (includes pre-launch protections once PR #5 merges) |
+| 1.2 | Set `DASHBOARD_TOKEN` secret (must be IDENTICAL on `foundbyai-worker` and `geo-dashboard`) | ✅ | Done 2026-06-30. Was a value-mismatch at first; now both workers share one value. Verified server-side: ops→virum redirect returns 302→200 (rich ops view loads). Old token `Egtkm…` is dead — Otterly upload scripts need the new value |
 | 1.3 | Enable churn events on the Stripe webhook endpoint (go.foundbyai.dk/api/webhook): `customer.subscription.deleted`, `invoice.payment_failed`, `invoice.paid` — in addition to existing `checkout.session.completed` | 🔧 | Stripe Dashboard → Developers → Webhooks → (endpoint) → Update events |
 | 1.4 | Browser walkthrough (the real gate — tests don't cover cross-worker cookie/redirect/styling) | ☐ | See §1a |
 
