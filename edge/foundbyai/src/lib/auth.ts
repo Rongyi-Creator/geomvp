@@ -20,7 +20,7 @@ export function getCookie(req: Request, name: string): string | null {
   const cookies = req.headers.get('Cookie') || '';
   const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const m = cookies.match(new RegExp(`(?:^|;\\s*)${safe}=([^;]*)`));
-  return m ? m[1] : null;
+  return m ? (m[1] ?? null) : null;
 }
 
 export function sessionCookie(sid: string): string {

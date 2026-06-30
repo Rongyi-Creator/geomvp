@@ -85,11 +85,6 @@ async function saveToken(token: string, data: TokenData, env: Env) {
   });
 }
 
-async function getDraft(token: string, env: Env): Promise<DraftContent | null> {
-  const raw = await env.DASHBOARD_KV.get(`draft:${token}`);
-  return raw ? (JSON.parse(raw) as DraftContent) : null;
-}
-
 async function resolveARecord(domain: string): Promise<string[]> {
   try {
     const res = await fetch(
@@ -311,6 +306,7 @@ async function handleSuccess(req: Request, env: Env): Promise<Response> {
   if (!sessionId || !/^[a-z0-9-]+$/.test(slug)) return html(renderErrorPage('Ugyldigt link.'), 400);
   const product = await getProduct(slug, env.DASHBOARD_KV);
   if (!product) return html(renderErrorPage('Produkt ikke fundet.'), 400);
+  if (product.status === 'active') return Response.redirect(`${env.SITE_URL}/app/p/${slug}`, 302);
 
   const stripeRes = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}`, {
     headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
@@ -378,6 +374,7 @@ async function handleDnsStatus(req: Request, env: Env, ctx: ExecutionContext): P
 async function activateClient(slug: string, env: Env) {
   const product = await getProduct(slug, env.DASHBOARD_KV);
   if (!product) return;
+  if (product.status === 'active') return; // already activated — avoid duplicate config writes + emails
   product.status = 'active';
   product.activatedAt = new Date().toISOString();
   await saveProduct(product, env.DASHBOARD_KV);
@@ -835,7 +832,7 @@ function countJsonLd(html: string): number {
   const re = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) {
-    try { JSON.parse(m[1].trim()); n++; } catch { /* malformed, skip */ }
+    try { JSON.parse((m[1] ?? '').trim()); n++; } catch { /* malformed, skip */ }
   }
   return n;
 }
@@ -875,7 +872,9 @@ async function handleCheck(req: Request, env: Env): Promise<Response> {
 }
 
 async function handleStart(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  const { url = '', email = '' } = (await req.json()) as { url?: string; email?: string };
+  let body: { url?: string; email?: string } = {};
+  try { body = (await req.json()) as { url?: string; email?: string }; } catch { return json({ ok: true }); }
+  const { url = '', email = '' } = body;
   const cleanEmail = email.trim().toLowerCase();
   const domain = url.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail) || !domain.includes('.')) {
@@ -884,26 +883,33 @@ async function handleStart(req: Request, env: Env, ctx: ExecutionContext): Promi
   const slug = deriveSlug(domain);
   if (!/^[a-z0-9-]+$/.test(slug)) return json({ ok: true });
 
+  // ponytail: best-effort per-email cooldown — blocks email-bombing + repeated paid Claude calls.
+  // Per-IP limiting deferred to M2. Still returns {ok:true} (no enumeration).
+  if (await env.DASHBOARD_KV.get(`cooldown:start:${cleanEmail}`)) return json({ ok: true });
+  await env.DASHBOARD_KV.put(`cooldown:start:${cleanEmail}`, '1', { expirationTtl: 60 });
+
   ctx.waitUntil((async () => {
     await addProduct(cleanEmail, slug, env.DASHBOARD_KV);
     if (!(await getProduct(slug, env.DASHBOARD_KV))) {
       const p: Product = { slug, domain, email: cleanEmail, status: 'draft', createdAt: new Date().toISOString() };
       await saveProduct(p, env.DASHBOARD_KV);
     }
+    const t = await mintLoginToken(cleanEmail, env.DASHBOARD_KV);
+    await sendLoginEmail(cleanEmail, `${env.SITE_URL}/auth/verify?t=${t}`, env);
     // Kick off extraction (cached under draft:<slug>); ignore failures here.
     try {
       const draft = await extractContent(domain, env);
       await env.DASHBOARD_KV.put(`draft:${slug}`, JSON.stringify(draft));
     } catch { /* extraction retried on the setup page */ }
-    const t = await mintLoginToken(cleanEmail, env);
-    await sendLoginEmail(cleanEmail, `${env.SITE_URL}/auth/verify?t=${t}`, env);
   })());
 
   return json({ ok: true });
 }
 
 async function handleWaitlist(req: Request, env: Env): Promise<Response> {
-  const { url = '', email = '' } = (await req.json()) as { url?: string; email?: string };
+  let body: { url?: string; email?: string } = {};
+  try { body = (await req.json()) as { url?: string; email?: string }; } catch { return json({ ok: true }); }
+  const { url = '', email = '' } = body;
   const cleanEmail = email.trim().toLowerCase();
   const domain = url.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail) && domain.includes('.')) {
@@ -965,9 +971,10 @@ async function handleAuthRequest(req: Request, env: Env, ctx: ExecutionContext):
   } catch { email = ''; }
   email = email.trim().toLowerCase();
   // Always 200 (no enumeration). Only send if it looks like an email.
-  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) && !(await env.DASHBOARD_KV.get(`cooldown:login:${email}`))) {
+    await env.DASHBOARD_KV.put(`cooldown:login:${email}`, '1', { expirationTtl: 60 });
     ctx.waitUntil((async () => {
-      const t = await mintLoginToken(email, env);
+      const t = await mintLoginToken(email, env.DASHBOARD_KV);
       await sendLoginEmail(email, `${env.SITE_URL}/auth/verify?t=${t}`, env);
     })());
   }
@@ -977,7 +984,7 @@ async function handleAuthRequest(req: Request, env: Env, ctx: ExecutionContext):
 
 async function handleAuthVerify(req: Request, env: Env): Promise<Response> {
   const t = new URL(req.url).searchParams.get('t') ?? '';
-  const email = await consumeLoginToken(t, env);
+  const email = await consumeLoginToken(t, env.DASHBOARD_KV);
   if (!email) return html(renderErrorPage('Login-linket er udløbet eller allerede brugt. Bed om et nyt.'), 400);
   // Ensure an account exists (covers verify-before-start edge cases).
   if (!(await getAccount(email, env.DASHBOARD_KV))) {
@@ -1039,8 +1046,9 @@ async function handleApp(req: Request, env: Env): Promise<Response> {
     slugs = (await getAccount(id.email, env.DASHBOARD_KV))?.productSlugs ?? [];
   }
 
-  if (!id.isOps && slugs.length === 1) {
-    return appProductRedirect(slugs[0], env);
+  const only = slugs[0];
+  if (!id.isOps && slugs.length === 1 && only) {
+    return appProductRedirect(only, env);
   }
   const items = slugs.map(s => `<li><a href="/app/p/${s}" style="color:#86AD94">${s}</a></li>`).join('');
   return html(`<!DOCTYPE html><html lang="da"><head><meta charset="utf-8"><meta name="robots" content="noindex">
