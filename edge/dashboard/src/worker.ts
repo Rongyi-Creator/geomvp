@@ -1275,7 +1275,7 @@ async function checkAuth(request: Request, env: Env): Promise<Response | AuthIde
       status: 302,
       headers: {
         Location: cleanUrl.pathname + cleanUrl.search,
-        "Set-Cookie": `dashboard_token=${opsToken}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000`,
+        "Set-Cookie": `dashboard_token=${opsToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`,
       },
     });
   }
@@ -1294,7 +1294,7 @@ async function checkAuth(request: Request, env: Env): Promise<Response | AuthIde
           status: 302,
           headers: {
             Location: cleanUrl.pathname + cleanUrl.search,
-            "Set-Cookie": `client_token_${client}=${clientToken}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000`,
+            "Set-Cookie": `client_token_${client}=${clientToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`,
           },
         });
       }
@@ -2185,7 +2185,7 @@ export default {
             status: 302,
             headers: {
               Location: clean.pathname + clean.search,
-              "Set-Cookie": `client_token_${clientId}=${clientToken}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000`,
+              "Set-Cookie": `client_token_${clientId}=${clientToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`,
             },
           });
         }
