@@ -81,6 +81,7 @@ slug = domain.replace(/^www\./,'').replace(/\.(dk|com|net|...)$/,'').replace(/[^
 | `account:<email>` | `{ email, isOps, createdAt, productSlugs: string[] }` | new |
 | `product:<slug>` | `{ slug, domain, email, status, stripeCustomerId?, stripeSubscriptionId?, createdAt, activatedAt? }` | new (supersedes per-token `TokenData` as source of truth) |
 | `session:<sid>` | `email` (TTL 30d) | new — cookie `fbai_session` |
+| `waitlist:<email>` | `{ email, domain, platform, createdAt }` | new — incompatible-platform lead, **no account** |
 | `login:<loginToken>` | `email` (TTL 15m, single-use) | new — magic-link |
 | `config:<slug>` | `{ domain, activeSince, ...draft }` | existing (dashboard reads this) |
 | `draft:<slug>` | `DraftContent` (Claude extraction) | existing, re-keyed token→slug |
@@ -121,6 +122,7 @@ reimplementing dashboards.
 | `GET /app/billing` | one row per product (status, trial days left, next charge); "Administrér" → Stripe Billing Portal. |
 | `GET /app/profile` | email, language, logout. |
 | `POST /api/start` | body `{url,email}` from LP result card → derive slug, create `account` (if new) + `product:<slug>` (status `draft`), kick off Claude extraction, then trigger magic link. The **closural step** D3 names. |
+| `POST /api/waitlist` | body `{url,email}` from the **incompatible** card → store `waitlist:<email>` = `{email, domain, platform, createdAt}`. **No account, no Claude call.** Idempotent (email is key; re-submit overwrites). Symmetric counterpart to `/api/start`. |
 | `POST /api/billing/portal` | create Stripe Billing Portal session for current account's customer → `{url}`. |
 
 ### 4.3 Existing routes — changes
@@ -135,8 +137,9 @@ reimplementing dashboards.
 ### 4.4 LP change (`public/index.html` + `app.js`)
 The compatibility **result card** gains an inline email field:
 `✓ Klar til optimering` → `[ din@email.dk ] [ Send mig mit login → ]` → `POST /api/start`
-→ "Tjek din indbakke" confirmation. The incompatible card's existing waitlist email field is
-unchanged. `/login` link in nav already present.
+→ "Tjek din indbakke" confirmation. The incompatible card's waitlist email field is wired to
+`POST /api/waitlist` (currently a no-op stub that discards the email — see §5.5).
+`/login` link in nav already present.
 
 ---
 
@@ -175,8 +178,14 @@ separate UI. `/app/billing` and per-product authz bypass the `productSlugs` chec
 `product:<slug>` appended to `account.productSlugs` → setup checklist. This is the
 second-conversion path the multi-product model unlocks.
 
-### 5.5 Incompatible platform
-Result card → waitlist email (existing behavior) → no account created.
+### 5.5 Incompatible platform (waitlist)
+Result card → email field → `POST /api/waitlist` → persist `waitlist:<email>`
+`{email, domain, platform, createdAt}` → "Tak — du er på ventelisten." **No account created.**
+
+> The current code is a visual stub: the wait-form sets `waitDone=true` and the email is
+> **discarded** (no POST, no storage). This slice makes it real. Leads stay leads, not accounts —
+> when a platform becomes supported, batch-scan `waitlist:*` by `platform`, email those users a
+> magic link, and they enter the normal `/api/start` flow as a real account.
 
 ---
 
@@ -238,7 +247,8 @@ the legacy short `virum` to avoid touching working dashboard data.
 
 1. Slug util + `account`/`product`/`session` KV helpers + migration of existing client.
 2. `auth.ts`: magic-link request/verify, session, `getIdentity`/`requireAuth`; `/login` page.
-3. `/api/start` + LP result-card email field (closes the loop end-to-end to "check inbox").
+3. `/api/start` + `/api/waitlist` + LP result-card email field + wire the incompatible card's
+   waitlist field to real storage (closes the loop end-to-end to "check inbox" / "on waitlist").
 4. `/app` product list (own + Ops `list config:*`), status badges, metrics summary.
 5. `/app/p/:slug` (active→dashboard, else→setup) + `/app/p/:slug/setup` onboarding checklist
    (re-key existing extract/confirm/checkout/dns to slug+session).
