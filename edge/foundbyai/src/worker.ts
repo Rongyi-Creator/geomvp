@@ -7,6 +7,7 @@
 import {
   deriveSlug, addProduct, getProduct, saveProduct,
   getAccount, putWaitlist, dashboardUrl, citationCount, productsForIdentity, type Product,
+  setSubIndex, applySubscriptionEvent,
 } from './lib/account.ts';
 import {
   mintLoginToken, consumeLoginToken, createSession, destroySession,
@@ -79,13 +80,7 @@ async function getToken(token: string, env: Env): Promise<TokenData | null> {
   return data;
 }
 
-async function saveToken(token: string, data: TokenData, env: Env) {
-  // Use remaining time from expiresAt so KV TTL never extends beyond the app-level expiry.
-  const remainingSecs = Math.max(60, Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000));
-  await env.DASHBOARD_KV.put(`token:${token}`, JSON.stringify(data), {
-    expirationTtl: remainingSecs,
-  });
-}
+
 
 async function resolveARecord(domain: string): Promise<string[]> {
   try {
@@ -320,6 +315,7 @@ async function handleSuccess(req: Request, env: Env): Promise<Response> {
   product.status = 'trial_pending_dns';
   if (session.customer) product.stripeCustomerId = session.customer;
   if (session.subscription) product.stripeSubscriptionId = session.subscription;
+  if (session.subscription) await setSubIndex(session.subscription, slug, env.DASHBOARD_KV);
   await saveProduct(product, env.DASHBOARD_KV);
   await env.DASHBOARD_KV.put(`dns_pending:${slug}`, product.domain, { expirationTtl: 7 * 24 * 3600 });
   return Response.redirect(`${env.SITE_URL}/app/p/${slug}/setup`, 302);
@@ -328,33 +324,36 @@ async function handleSuccess(req: Request, env: Env): Promise<Response> {
 async function handleWebhook(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const sig = req.headers.get('stripe-signature') ?? '';
   const payload = await req.text();
-
   if (!(await verifyStripeSignature(payload, sig, env.STRIPE_WEBHOOK_SECRET))) {
     return new Response('Bad signature', { status: 400 });
   }
-
-  const event = JSON.parse(payload) as {
-    type: string;
-    data: { object: Record<string, unknown> };
-  };
+  const event = JSON.parse(payload) as { type: string; data: { object: Record<string, unknown> } };
+  const obj = event.data.object;
 
   if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    const token = (session['metadata'] as Record<string, string> | undefined)?.['token'];
-    if (token) {
+    const slug = (obj['metadata'] as Record<string, string> | undefined)?.['slug'];
+    if (slug && /^[a-z0-9-]+$/.test(slug)) {
       ctx.waitUntil((async () => {
-        const data = await getToken(token, env);
-        if (data && data.status !== 'dns_pending' && data.status !== 'active') {
-          data.status = 'dns_pending';
-          if (session['customer']) data.stripeCustomerId = String(session['customer']);
-          if (session['subscription']) data.stripeSubscriptionId = String(session['subscription']);
-          await saveToken(token, data, env);
-          await env.DASHBOARD_KV.put(`dns_pending:${token}`, data.domain, { expirationTtl: TOKEN_TTL });
+        const product = await getProduct(slug, env.DASHBOARD_KV);
+        if (product && product.status !== 'active' && product.status !== 'trial_pending_dns') {
+          product.status = 'trial_pending_dns';
+          if (obj['customer']) product.stripeCustomerId = String(obj['customer']);
+          if (obj['subscription']) {
+            product.stripeSubscriptionId = String(obj['subscription']);
+            await setSubIndex(String(obj['subscription']), slug, env.DASHBOARD_KV);
+          }
+          await saveProduct(product, env.DASHBOARD_KV);
+          await env.DASHBOARD_KV.put(`dns_pending:${slug}`, product.domain, { expirationTtl: TOKEN_TTL });
         }
       })());
     }
+  } else if (event.type === 'customer.subscription.deleted') {
+    const subId = String(obj['id'] ?? '');
+    if (subId) ctx.waitUntil(applySubscriptionEvent('deleted', subId, env.DASHBOARD_KV));
+  } else if (event.type === 'invoice.payment_failed') {
+    const subId = String(obj['subscription'] ?? '');
+    if (subId) ctx.waitUntil(applySubscriptionEvent('payment_failed', subId, env.DASHBOARD_KV));
   }
-
   return new Response('ok');
 }
 

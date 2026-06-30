@@ -1,5 +1,5 @@
 // Account / product data model on top of shared DASHBOARD_KV.
-export type ProductStatus = 'draft' | 'content_confirmed' | 'trial_pending_dns' | 'active';
+export type ProductStatus = 'draft' | 'content_confirmed' | 'trial_pending_dns' | 'active' | 'past_due' | 'cancelled';
 
 export interface Account {
   email: string;
@@ -96,6 +96,34 @@ export async function productsForIdentity(
     if (p) out.push(p);
   }
   return out;
+}
+
+// Reverse index subscriptionId → slug, so churn webhooks (which carry only the
+// Stripe subscription id) can find the product.
+export async function setSubIndex(subId: string, slug: string, kv: KVNamespace): Promise<void> {
+  await kv.put(`subindex:${subId}`, slug);
+}
+export async function getSlugBySub(subId: string, kv: KVNamespace): Promise<string | null> {
+  return kv.get(`subindex:${subId}`);
+}
+
+// Applies a Stripe subscription churn event to product status. Returns the slug
+// touched, or null if the subscription is unknown.
+export async function applySubscriptionEvent(
+  kind: 'deleted' | 'payment_failed', subId: string, kv: KVNamespace,
+): Promise<string | null> {
+  const slug = await getSlugBySub(subId, kv);
+  if (!slug) return null;
+  const product = await getProduct(slug, kv);
+  if (!product) return null;
+  if (kind === 'deleted') {
+    product.status = 'cancelled';
+    await kv.delete(`config:${slug}`); // deactivate the GEO layer (dashboard stops serving)
+  } else {
+    product.status = 'past_due';
+  }
+  await saveProduct(product, kv);
+  return slug;
 }
 
 // Builds the dashboard-worker deep link. Ops → rich ops view authenticated by

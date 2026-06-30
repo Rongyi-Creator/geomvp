@@ -4,6 +4,7 @@ import { MemKV } from '../src/lib/kvmock.ts';
 import {
   deriveSlug, getAccount, saveAccount, addProduct,
   getProduct, saveProduct, putWaitlist, citationCount, productsForIdentity, type Product,
+  setSubIndex, applySubscriptionEvent,
 } from '../src/lib/account.ts';
 
 test('deriveSlug strips scheme, www, tld, path and normalizes', () => {
@@ -106,4 +107,20 @@ test('productsForIdentity returns own products for client, all for ops', async (
 
   const ops = await productsForIdentity({ email: 'admin@x.dk', isOps: true }, kv);
   assert.deepEqual(ops.map(p => p.slug).sort(), ['a', 'b']);
+});
+
+test('applySubscriptionEvent maps churn events to product status', async () => {
+  const kv = new MemKV() as unknown as KVNamespace;
+  await saveProduct({ slug: 'virum', domain: 'virum.dk', email: 'u@x.dk', status: 'active', createdAt: 'now', stripeSubscriptionId: 'sub_1' }, kv);
+  await kv.put('config:virum', JSON.stringify({ domain: 'virum.dk' }));
+  await setSubIndex('sub_1', 'virum', kv);
+
+  assert.equal(await applySubscriptionEvent('payment_failed', 'sub_1', kv), 'virum');
+  assert.equal((await getProduct('virum', kv))?.status, 'past_due');
+
+  assert.equal(await applySubscriptionEvent('deleted', 'sub_1', kv), 'virum');
+  assert.equal((await getProduct('virum', kv))?.status, 'cancelled');
+  assert.equal(await kv.get('config:virum'), null); // deactivated
+
+  assert.equal(await applySubscriptionEvent('deleted', 'sub_unknown', kv), null);
 });
