@@ -995,14 +995,23 @@ async function handleLogout(req: Request, env: Env): Promise<Response> {
 async function handleSetupPage(req: Request, env: Env, slug: string): Promise<Response> {
   const guard = await requireOwnedProduct(req, env, slug);
   if (guard instanceof Response) {
-    // Not logged in → send to login; keep it simple.
-    return new Response(null, { status: 302, headers: { Location: '/login' } });
+    if (guard.status === 401) return new Response(null, { status: 302, headers: { Location: '/login' } });
+    return html(renderErrorPage('Produktet blev ikke fundet.'), 404);
   }
   const product = guard.product;
   const draftRaw = await env.DASHBOARD_KV.get(`draft:${slug}`);
   const draft = draftRaw ? JSON.parse(draftRaw) : null;
   const initial = JSON.stringify({ slug, domain: product.domain, status: product.status, draft });
   return html(renderSetupPage(slug, product.domain, initial));
+}
+
+async function handleProductPage(req: Request, env: Env, slug: string): Promise<Response> {
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) {
+    if (guard.status === 401) return new Response(null, { status: 302, headers: { Location: '/login' } });
+    return html(renderErrorPage('Produktet blev ikke fundet.'), 404);
+  }
+  return appProductRedirect(slug, env);
 }
 
 async function appProductRedirect(slug: string, env: Env): Promise<Response> {
@@ -1082,7 +1091,7 @@ export default {
     if (req.method === 'GET' && p0 === 'app' && p1 === 'p' && parts[2] && parts[3] === 'setup')
       return handleSetupPage(req, env, parts[2]);
     if (req.method === 'GET' && p0 === 'app' && p1 === 'p' && parts[2] && !parts[3])
-      return appProductRedirect(parts[2], env);
+      return handleProductPage(req, env, parts[2]);
     if (req.method === 'GET' && p0 === 'api' && p1 === 'auth' && parts[2] === 'logout')
       return handleLogout(req, env); // GET convenience for the list link
 
