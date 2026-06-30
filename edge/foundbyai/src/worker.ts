@@ -4,6 +4,15 @@
 //         GET /api/dns-status
 // Cron: */5 * * * *  → checkPendingDns
 
+import {
+  deriveSlug, addProduct, getProduct, saveProduct,
+  getAccount, putWaitlist, type Product,
+} from './lib/account.ts';
+import {
+  mintLoginToken, consumeLoginToken, createSession, destroySession,
+  getIdentity, sessionCookie, clearCookie, randomHex,
+} from './lib/auth.ts';
+
 interface Env {
   DASHBOARD_KV: KVNamespace;
   ANTHROPIC_API_KEY: string;
@@ -13,6 +22,8 @@ interface Env {
   RESEND_API_KEY: string;
   SITE_URL: string;    // https://foundbyai.dk
   GEO_PROXY_IP: string; // 76.76.21.21
+  DASHBOARD_URL: string; // customer dashboard origin
+  OPS_EMAILS: string;
 }
 
 interface TokenData {
@@ -72,11 +83,6 @@ async function saveToken(token: string, data: TokenData, env: Env) {
   await env.DASHBOARD_KV.put(`token:${token}`, JSON.stringify(data), {
     expirationTtl: remainingSecs,
   });
-}
-
-async function getDraft(token: string, env: Env): Promise<DraftContent | null> {
-  const raw = await env.DASHBOARD_KV.get(`draft:${token}`);
-  return raw ? (JSON.parse(raw) as DraftContent) : null;
 }
 
 async function resolveARecord(domain: string): Promise<string[]> {
@@ -204,28 +210,40 @@ async function extractContent(domain: string, env: Env): Promise<DraftContent> {
 
 // ── Route Handlers ──────────────────────────────────────────────────────────
 
+async function requireOwnedProduct(req: Request, env: Env, slug: string): Promise<{ id: { email: string; isOps: boolean }; product: Product } | Response> {
+  if (!/^[a-z0-9-]+$/.test(slug)) return json({ error: 'bad_slug' }, 400);
+  const id = await getIdentity(req, env);
+  if (!id) return json({ error: 'unauthorized' }, 401);
+  const product = await getProduct(slug, env.DASHBOARD_KV);
+  if (!product) return json({ error: 'not_found' }, 404);
+  const acc = await getAccount(id.email, env.DASHBOARD_KV);
+  const owns = id.isOps || (acc?.productSlugs.includes(slug) ?? false);
+  if (!owns) return json({ error: 'not_found' }, 404);
+  return { id, product };
+}
+
 async function handleActivatePage(token: string, env: Env): Promise<Response> {
+  // Legacy cold-email link: map token→slug, create a session, send to setup.
   const data = await getToken(token, env);
   if (!data) return html(renderErrorPage('Linket er udløbet eller ugyldigt. Kontakt os for et nyt link.'), 404);
-
-  const draft = await getDraft(token, env);
-  const initial = JSON.stringify({ token, domain: data.domain, status: data.status, draft });
-
-  return html(renderActivatePage(data.domain, initial));
+  const slug = deriveSlug(data.domain);
+  await addProduct(data.email, slug, env.DASHBOARD_KV);
+  if (!(await getProduct(slug, env.DASHBOARD_KV))) {
+    await saveProduct({ slug, domain: data.domain, email: data.email, status: 'draft', createdAt: new Date().toISOString() }, env.DASHBOARD_KV);
+  }
+  const sid = await createSession(data.email, env.DASHBOARD_KV);
+  return new Response(null, { status: 302, headers: { Location: `/app/p/${slug}/setup`, 'Set-Cookie': sessionCookie(sid) } });
 }
 
 async function handleExtract(req: Request, env: Env): Promise<Response> {
-  const { token } = await req.json() as { token: string };
-  const data = await getToken(token, env);
-  if (!data) return json({ error: 'invalid_token' }, 400);
-
-  // Return cached draft if exists
-  const cached = await getDraft(token, env);
-  if (cached) return json(cached);
-
+  const { slug } = (await req.json()) as { slug: string };
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) return guard;
+  const cached = await env.DASHBOARD_KV.get(`draft:${slug}`);
+  if (cached) return new Response(cached, { headers: { 'Content-Type': 'application/json' } });
   try {
-    const draft = await extractContent(data.domain, env);
-    await env.DASHBOARD_KV.put(`draft:${token}`, JSON.stringify(draft));
+    const draft = await extractContent(guard.product.domain, env);
+    await env.DASHBOARD_KV.put(`draft:${slug}`, JSON.stringify(draft));
     return json(draft);
   } catch {
     return json({ error: 'extraction_failed' }, 500);
@@ -233,13 +251,10 @@ async function handleExtract(req: Request, env: Env): Promise<Response> {
 }
 
 async function handleConfirm(req: Request, env: Env): Promise<Response> {
-  const body = await req.json() as { token: string } & Partial<DraftContent>;
-  const { token, ...fields } = body;
-
-  const data = await getToken(token, env);
-  if (!data) return json({ error: 'invalid_token' }, 400);
-
-  // Persist confirmed draft (overwrites extracted version with user edits)
+  const body = (await req.json()) as { slug: string } & Partial<DraftContent>;
+  const { slug, ...fields } = body;
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) return guard;
   const draft: DraftContent = {
     businessName: fields.businessName ?? '',
     address: fields.address ?? '',
@@ -248,84 +263,64 @@ async function handleConfirm(req: Request, env: Env): Promise<Response> {
     services: Array.isArray(fields.services) ? fields.services : [],
     extractedAt: new Date().toISOString(),
   };
-  await env.DASHBOARD_KV.put(`draft:${token}`, JSON.stringify(draft));
-
-  data.status = 'content_confirmed';
-  await saveToken(token, data, env);
-
+  await env.DASHBOARD_KV.put(`draft:${slug}`, JSON.stringify(draft));
+  guard.product.status = 'content_confirmed';
+  await saveProduct(guard.product, env.DASHBOARD_KV);
   return json({ ok: true });
 }
 
 async function handleCheckout(req: Request, env: Env): Promise<Response> {
-  const { token } = await req.json() as { token: string };
-  const data = await getToken(token, env);
-  if (!data) return json({ error: 'invalid_token' }, 400);
-  if (data.status !== 'content_confirmed') return json({ error: 'confirm_first' }, 400);
+  const { slug } = (await req.json()) as { slug: string };
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) return guard;
+  const product = guard.product;
+  if (product.status !== 'content_confirmed') return json({ error: 'confirm_first' }, 400);
 
-  const successUrl = `${env.SITE_URL}/success?session_id={CHECKOUT_SESSION_ID}&token=${token}`;
-  const cancelUrl = `${env.SITE_URL}/activate/${token}`;
-
+  const successUrl = `${env.SITE_URL}/success?session_id={CHECKOUT_SESSION_ID}&slug=${slug}`;
+  const cancelUrl = `${env.SITE_URL}/app/p/${slug}/setup`;
   const params = new URLSearchParams({
     mode: 'subscription',
     'payment_method_types[]': 'card',
     'line_items[0][price]': env.STRIPE_PRICE_ID,
     'line_items[0][quantity]': '1',
     'subscription_data[trial_period_days]': '30',
-    'customer_email': data.email,
+    'customer_email': product.email,
     'success_url': successUrl,
     'cancel_url': cancelUrl,
-    'metadata[token]': token,
+    'metadata[slug]': slug,
   });
-
   const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
   });
-
-  const session = await stripeRes.json() as { url?: string; error?: { message: string } };
+  const session = (await stripeRes.json()) as { url?: string; error?: { message: string } };
   if (!session.url) return json({ error: session.error?.message ?? 'stripe_error' }, 500);
-
   return json({ url: session.url });
 }
 
 async function handleSuccess(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const sessionId = url.searchParams.get('session_id');
-  const token = url.searchParams.get('token');
-  if (!sessionId || !token) return html(renderErrorPage('Ugyldigt link.'), 400);
+  const slug = url.searchParams.get('slug') ?? '';
+  if (!sessionId || !/^[a-z0-9-]+$/.test(slug)) return html(renderErrorPage('Ugyldigt link.'), 400);
+  const product = await getProduct(slug, env.DASHBOARD_KV);
+  if (!product) return html(renderErrorPage('Produkt ikke fundet.'), 400);
+  if (product.status === 'active') return Response.redirect(`${env.SITE_URL}/app/p/${slug}`, 302);
 
-  const data = await getToken(token, env);
-  if (!data) return html(renderErrorPage('Token udløbet.'), 400);
-
-  // Verify session with Stripe
   const stripeRes = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}`, {
     headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
   });
-  const session = await stripeRes.json() as {
-    status?: string;
-    payment_status?: string;
-    customer?: string;
-    subscription?: string;
-    metadata?: { token?: string };
-  };
+  const session = (await stripeRes.json()) as { status?: string; customer?: string; subscription?: string; metadata?: { slug?: string } };
+  if (session.status !== 'complete') return Response.redirect(`${env.SITE_URL}/app/p/${slug}/setup`, 302);
+  if (session.metadata?.slug !== slug) return html(renderErrorPage('Sessionen passer ikke til dette produkt.'), 400);
 
-  if (session.status !== 'complete') {
-    return Response.redirect(`${env.SITE_URL}/activate/${token}`, 302);
-  }
-
-  data.status = 'dns_pending';
-  if (session.customer) data.stripeCustomerId = session.customer;
-  if (session.subscription) data.stripeSubscriptionId = session.subscription;
-  await saveToken(token, data, env);
-
-  // Add to dns polling queue
-  await env.DASHBOARD_KV.put(`dns_pending:${token}`, data.domain, { expirationTtl: TOKEN_TTL });
-
-  return Response.redirect(`${env.SITE_URL}/activate/${token}`, 302);
+  product.status = 'trial_pending_dns';
+  if (session.customer) product.stripeCustomerId = session.customer;
+  if (session.subscription) product.stripeSubscriptionId = session.subscription;
+  await saveProduct(product, env.DASHBOARD_KV);
+  await env.DASHBOARD_KV.put(`dns_pending:${slug}`, product.domain, { expirationTtl: 7 * 24 * 3600 });
+  return Response.redirect(`${env.SITE_URL}/app/p/${slug}/setup`, 302);
 }
 
 async function handleWebhook(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -362,46 +357,50 @@ async function handleWebhook(req: Request, env: Env, ctx: ExecutionContext): Pro
 }
 
 async function handleDnsStatus(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  const token = new URL(req.url).searchParams.get('token');
-  if (!token) return json({ error: 'missing_token' }, 400);
-
-  const data = await getToken(token, env);
-  if (!data) return json({ error: 'invalid_token' }, 400);
-
-  if (data.status === 'active') return json({ active: true });
-
-  const ips = await resolveARecord(data.domain);
+  const slug = new URL(req.url).searchParams.get('slug') ?? '';
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) return guard;
+  if (guard.product.status === 'active') return json({ active: true });
+  const ips = await resolveARecord(guard.product.domain);
   if (ips.includes(env.GEO_PROXY_IP)) {
-    ctx.waitUntil(activateClient(token, data, env));
+    ctx.waitUntil(activateClient(slug, env));
     return json({ active: true });
   }
-
   return json({ active: false, resolvedIps: ips });
 }
 
 // ── Activation Logic ─────────────────────────────────────────────────────────
 
-async function activateClient(token: string, data: TokenData, env: Env) {
-  data.status = 'active';
-  data.activatedAt = new Date().toISOString();
-  await saveToken(token, data, env);
+async function activateClient(slug: string, env: Env) {
+  const product = await getProduct(slug, env.DASHBOARD_KV);
+  if (!product) return;
+  if (product.status === 'active') return; // already activated — avoid duplicate config writes + emails
+  product.status = 'active';
+  product.activatedAt = new Date().toISOString();
+  await saveProduct(product, env.DASHBOARD_KV);
 
-  // Write GEO config (same KV namespace, key = config:{domain})
-  const draft = await getDraft(token, env);
-  await env.DASHBOARD_KV.put(`config:${data.domain}`, JSON.stringify({
-    domain: data.domain,
-    activeSince: data.activatedAt,
-    ...draft,
+  const draftRaw = await env.DASHBOARD_KV.get(`draft:${slug}`);
+  const draft = draftRaw ? (JSON.parse(draftRaw) as DraftContent) : null;
+
+  // Dashboard config keyed by slug (dashboard worker reads config:<slug>).
+  await env.DASHBOARD_KV.put(`config:${slug}`, JSON.stringify({
+    domain: product.domain,
+    activeSince: product.activatedAt,
+    ...(draft ?? {}),
   }));
+  // Mint the per-product dashboard token used by the dashboard worker's client auth.
+  let clientToken = await env.DASHBOARD_KV.get(`client_token:${slug}`);
+  if (!clientToken) {
+    clientToken = randomHex(32);
+    await env.DASHBOARD_KV.put(`client_token:${slug}`, clientToken);
+  }
+  await env.DASHBOARD_KV.delete(`dns_pending:${slug}`);
 
-  // Remove from dns polling queue
-  await env.DASHBOARD_KV.delete(`dns_pending:${token}`);
-
-  // Send confirmation email
-  await sendActivationEmail(data.email, data.domain, draft?.businessName ?? data.domain, env);
+  const dashLink = `${env.DASHBOARD_URL}/?view=client&client=${slug}&token=${clientToken}`;
+  await sendActivationEmail(product.email, product.domain, draft?.businessName ?? product.domain, env, dashLink);
 }
 
-async function sendActivationEmail(to: string, domain: string, name: string, env: Env) {
+async function sendActivationEmail(to: string, domain: string, name: string, env: Env, dashLink: string) {
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -412,21 +411,21 @@ async function sendActivationEmail(to: string, domain: string, name: string, env
       from: 'Found by AI <hej@foundbyai.dk>',
       to: [to],
       subject: `✅ ${name} er nu synlig for AI — Found by AI`,
-      html: `
-        <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 16px">
-          <h1 style="color:#15803d;font-size:22px">🎉 Dit GEO Layer er nu aktivt!</h1>
-          <p style="color:#374151;line-height:1.6">
-            <strong>${esc(name)}</strong> (${esc(domain)}) er nu synlig for ChatGPT, Perplexity og Claude.<br><br>
-            AI-søgemaskiner kan nu læse din virksomhedsinfo og anbefale dig til kunder.
-          </p>
-          <p style="color:#374151;line-height:1.6">
-            Du vil modtage en månedlig rapport med data om, hvornår AI-bots besøger din side og citerer din virksomhed.
-          </p>
-          <p style="color:#6b7280;font-size:14px;margin-top:32px">
-            Found by AI · <a href="https://foundbyai.dk" style="color:#2563eb">foundbyai.dk</a>
-          </p>
-        </div>
-      `,
+      html:
+        `<div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 16px">` +
+        `<h1 style="color:#15803d;font-size:22px">🎉 Dit GEO Layer er nu aktivt!</h1>` +
+        `<p style="color:#374151;line-height:1.6">` +
+        `<strong>${esc(name)}</strong> (${esc(domain)}) er nu synlig for ChatGPT, Perplexity og Claude.<br><br>` +
+        `AI-søgemaskiner kan nu læse din virksomhedsinfo og anbefale dig til kunder.` +
+        `</p>` +
+        `<p style="color:#374151;line-height:1.6">` +
+        `Du vil modtage en månedlig rapport med data om, hvornår AI-bots besøger din side og citerer din virksomhed.` +
+        `</p>` +
+        `<p style="margin:24px 0"><a href="${dashLink}" style="background:#587B66;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:600">Åbn dit dashboard →</a></p>` +
+        `<p style="color:#6b7280;font-size:14px;margin-top:32px">` +
+        `Found by AI · <a href="https://foundbyai.dk" style="color:#2563eb">foundbyai.dk</a>` +
+        `</p>` +
+        `</div>`,
     }),
   });
 }
@@ -435,21 +434,14 @@ async function sendActivationEmail(to: string, domain: string, name: string, env
 
 async function checkPendingDns(env: Env) {
   const list = await env.DASHBOARD_KV.list({ prefix: 'dns_pending:' });
-
   await Promise.all(
     list.keys.map(async ({ name }) => {
-      const token = name.replace('dns_pending:', '');
+      const slug = name.slice('dns_pending:'.length);
       const domain = await env.DASHBOARD_KV.get(name);
       if (!domain) return;
-
       const ips = await resolveARecord(domain);
-      if (ips.includes(env.GEO_PROXY_IP)) {
-        const data = await getToken(token, env);
-        if (data && data.status !== 'active') {
-          await activateClient(token, data, env);
-        }
-      }
-    })
+      if (ips.includes(env.GEO_PROXY_IP)) await activateClient(slug, env);
+    }),
   );
 }
 
@@ -466,7 +458,7 @@ a{color:#2563eb}</style></head>
 <p style="margin-top:24px"><a href="mailto:hej@foundbyai.dk">Kontakt os</a></p></div></body></html>`;
 }
 
-function renderActivatePage(domain: string, initialJson: string): string {
+function renderSetupPage(slug: string, domain: string, initialJson: string): string {
   return `<!DOCTYPE html>
 <html lang="da">
 <head>
@@ -684,7 +676,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#1e
   function startDnsPolling() {
     var timer;
     function check() {
-      fetch('/api/dns-status?token=' + D.token)
+      fetch('/api/dns-status?slug=' + D.slug)
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (data.active) {
@@ -714,7 +706,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#1e
     return;
   }
 
-  if (D.status === 'paid' || D.status === 'dns_pending') {
+  if (D.status === 'trial_pending_dns') {
     if (D.draft) populateFields(D.draft);
     else { $i('s1-loading').style.display = 'none'; }
     startStep3();
@@ -733,7 +725,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#1e
   fetch('/api/extract', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: D.token })
+    body: JSON.stringify({ slug: D.slug })
   })
     .then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
     .then(function(draft) { populateFields(draft); })
@@ -756,7 +748,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#1e
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        token: D.token,
+        slug: D.slug,
         businessName: $i('f-name').value,
         address: $i('f-address').value,
         phone: $i('f-phone').value,
@@ -785,7 +777,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#1e
     fetch('/api/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: D.token })
+      body: JSON.stringify({ slug: D.slug })
     })
       .then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
       .then(function(data) { window.location.href = data.url; })
@@ -812,6 +804,262 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#1e
 
 // ── Export ───────────────────────────────────────────────────────────────────
 
+// ── Landing page compatibility check ─────────────────────────────────────────
+// Mirrors scripts/marketing/02-check-compatibility.ts, adapted for the Worker
+// runtime (no cheerio). Returns the same result/platform shape the LP expects.
+type CheckResult = 'compatible' | 'incompatible' | 'unreachable' | 'timeout' | 'system_error';
+
+function detectPlatform(html: string, headers: Headers): { platform: string; incompatible: boolean } {
+  const h = html.toLowerCase();
+  const server = (headers.get('server') || '').toLowerCase();
+  // Incompatible SaaS site-builders (can't change DNS to our proxy).
+  if (/static\.wixstatic\.com|wix\.com|x-wix/.test(h) || headers.has('x-wix-request-id'))
+    return { platform: 'Wix', incompatible: true };
+  if (/static1\.squarespace\.com|squarespace\.com/.test(h) || server.includes('squarespace'))
+    return { platform: 'Squarespace', incompatible: true };
+  if (/assets\.website-files\.com|assets-global\.website-files\.com|webflow\.io/.test(h) || /generator" content="webflow/.test(h))
+    return { platform: 'Webflow', incompatible: true };
+  if (/cdn\.shopify\.com|myshopify\.com/.test(h) || headers.has('x-shopid'))
+    return { platform: 'Shopify', incompatible: true };
+  // Compatible platforms.
+  if (/wp-content|wp-includes|generator" content="wordpress/.test(h))
+    return { platform: 'WordPress', incompatible: false };
+  return { platform: 'one.com', incompatible: false };
+}
+
+function countJsonLd(html: string): number {
+  let n = 0;
+  const re = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    try { JSON.parse((m[1] ?? '').trim()); n++; } catch { /* malformed, skip */ }
+  }
+  return n;
+}
+
+async function handleCheck(req: Request, env: Env): Promise<Response> {
+  void env;
+  const raw = new URL(req.url).searchParams.get('url') || '';
+  let target: string;
+  try {
+    const u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    if (u.hostname.indexOf('.') === -1) throw new Error('no tld');
+    target = u.origin + '/';
+  } catch {
+    return json({ result: 'unreachable' as CheckResult });
+  }
+
+  try {
+    const res = await fetch(target, {
+      signal: AbortSignal.timeout(8000),
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; foundbyai-checker/1.0)' },
+      redirect: 'follow',
+    });
+    if (!res.ok) return json({ result: 'unreachable' as CheckResult });
+    const body = await res.text();
+    const { platform, incompatible } = detectPlatform(body, res.headers);
+    const signals = countJsonLd(body);
+    return json({
+      result: (incompatible ? 'incompatible' : 'compatible') as CheckResult,
+      platform,
+      signals,
+    });
+  } catch (e) {
+    const name = (e as Error)?.name || '';
+    if (name === 'TimeoutError' || name === 'AbortError') return json({ result: 'timeout' as CheckResult });
+    return json({ result: 'unreachable' as CheckResult });
+  }
+}
+
+async function handleStart(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  let body: { url?: string; email?: string } = {};
+  try { body = (await req.json()) as { url?: string; email?: string }; } catch { return json({ ok: true }); }
+  const { url = '', email = '' } = body;
+  const cleanEmail = email.trim().toLowerCase();
+  const domain = url.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail) || !domain.includes('.')) {
+    return json({ ok: true }); // no enumeration / no detail leak
+  }
+  const slug = deriveSlug(domain);
+  if (!/^[a-z0-9-]+$/.test(slug)) return json({ ok: true });
+
+  // ponytail: best-effort per-email cooldown — blocks email-bombing + repeated paid Claude calls.
+  // Per-IP limiting deferred to M2. Still returns {ok:true} (no enumeration).
+  if (await env.DASHBOARD_KV.get(`cooldown:start:${cleanEmail}`)) return json({ ok: true });
+  await env.DASHBOARD_KV.put(`cooldown:start:${cleanEmail}`, '1', { expirationTtl: 60 });
+
+  ctx.waitUntil((async () => {
+    await addProduct(cleanEmail, slug, env.DASHBOARD_KV);
+    if (!(await getProduct(slug, env.DASHBOARD_KV))) {
+      const p: Product = { slug, domain, email: cleanEmail, status: 'draft', createdAt: new Date().toISOString() };
+      await saveProduct(p, env.DASHBOARD_KV);
+    }
+    const t = await mintLoginToken(cleanEmail, env.DASHBOARD_KV);
+    await sendLoginEmail(cleanEmail, `${env.SITE_URL}/auth/verify?t=${t}`, env);
+    // Kick off extraction (cached under draft:<slug>); ignore failures here.
+    try {
+      const draft = await extractContent(domain, env);
+      await env.DASHBOARD_KV.put(`draft:${slug}`, JSON.stringify(draft));
+    } catch { /* extraction retried on the setup page */ }
+  })());
+
+  return json({ ok: true });
+}
+
+async function handleWaitlist(req: Request, env: Env): Promise<Response> {
+  let body: { url?: string; email?: string } = {};
+  try { body = (await req.json()) as { url?: string; email?: string }; } catch { return json({ ok: true }); }
+  const { url = '', email = '' } = body;
+  const cleanEmail = email.trim().toLowerCase();
+  const domain = url.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail) && domain.includes('.')) {
+    const platform = new URL(req.url).searchParams.get('platform') || 'ukendt';
+    await putWaitlist(cleanEmail, domain, platform, env.DASHBOARD_KV);
+  }
+  return json({ ok: true });
+}
+
+// ── Auth / Login handlers ────────────────────────────────────────────────────
+
+function renderLoginPage(sent = false): string {
+  return `<!DOCTYPE html><html lang="da"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Log ind — Found by AI</title>
+<style>body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0A0D10;color:#E0DED8;display:flex;min-height:100vh;align-items:center;justify-content:center}
+.card{background:#12151A;border:1px solid #252830;border-radius:16px;padding:36px;max-width:380px;width:90%}
+h1{font-size:20px;margin:0 0 8px}p{color:#9CA29C;font-size:14px;line-height:1.5}
+input{width:100%;padding:12px 14px;border-radius:10px;border:1px solid #2A2E36;background:#0A0D10;color:#fff;font-size:15px;margin:14px 0;box-sizing:border-box}
+button{width:100%;padding:12px;border:none;border-radius:10px;background:#587B66;color:#fff;font-weight:600;font-size:15px;cursor:pointer}</style>
+</head><body><div class="card">
+${sent
+  ? `<h1>Tjek din indbakke</h1><p>Vi har sendt dig et login-link. Klik på linket i e-mailen for at logge ind.</p>`
+  : `<h1>Log ind</h1><p>Indtast din e-mail, så sender vi dig et login-link.</p>
+     <form method="POST" action="/api/auth/request">
+       <input type="email" name="email" required placeholder="din@email.dk">
+       <button type="submit">Send mig et login-link</button>
+     </form>`}
+</div></body></html>`;
+}
+
+async function sendLoginEmail(to: string, link: string, env: Env): Promise<void> {
+  const _r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: 'Found by AI <hej@foundbyai.dk>',
+      to: [to],
+      subject: 'Dit login-link til Found by AI',
+      html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:32px 16px">
+        <h1 style="font-size:20px;color:#1A1A17">Log ind på Found by AI</h1>
+        <p style="color:#46453E;line-height:1.6">Klik på knappen for at logge ind. Linket udløber om 15 minutter.</p>
+        <p style="margin:24px 0"><a href="${link}" style="background:#587B66;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:600">Log ind →</a></p>
+        <p style="color:#8A8A80;font-size:13px">Hvis du ikke bad om dette, kan du ignorere e-mailen.</p>
+      </div>`,
+    }),
+  });
+  if (!_r.ok) console.error('Resend login email failed', _r.status, await _r.text().catch(() => ''));
+}
+
+function handleLoginPage(): Response { return html(renderLoginPage(false)); }
+
+async function handleAuthRequest(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const ct = req.headers.get('content-type') || '';
+  let email = '';
+  try {
+    if (ct.includes('application/json')) email = ((await req.json()) as { email?: string }).email ?? '';
+    else email = String((await req.formData()).get('email') ?? '');
+  } catch { email = ''; }
+  email = email.trim().toLowerCase();
+  // Always 200 (no enumeration). Only send if it looks like an email.
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) && !(await env.DASHBOARD_KV.get(`cooldown:login:${email}`))) {
+    await env.DASHBOARD_KV.put(`cooldown:login:${email}`, '1', { expirationTtl: 60 });
+    ctx.waitUntil((async () => {
+      const t = await mintLoginToken(email, env.DASHBOARD_KV);
+      await sendLoginEmail(email, `${env.SITE_URL}/auth/verify?t=${t}`, env);
+    })());
+  }
+  if (ct.includes('application/json')) return json({ ok: true });
+  return html(renderLoginPage(true));
+}
+
+async function handleAuthVerify(req: Request, env: Env): Promise<Response> {
+  const t = new URL(req.url).searchParams.get('t') ?? '';
+  const email = await consumeLoginToken(t, env.DASHBOARD_KV);
+  if (!email) return html(renderErrorPage('Login-linket er udløbet eller allerede brugt. Bed om et nyt.'), 400);
+  // Ensure an account exists (covers verify-before-start edge cases).
+  if (!(await getAccount(email, env.DASHBOARD_KV))) {
+    await env.DASHBOARD_KV.put(`account:${email}`, JSON.stringify({ email, isOps: false, createdAt: new Date().toISOString(), productSlugs: [] }));
+  }
+  const sid = await createSession(email, env.DASHBOARD_KV);
+  return new Response(null, { status: 302, headers: { Location: '/app', 'Set-Cookie': sessionCookie(sid) } });
+}
+
+async function handleLogout(req: Request, env: Env): Promise<Response> {
+  await destroySession(req, env.DASHBOARD_KV);
+  return new Response(null, { status: 302, headers: { Location: '/', 'Set-Cookie': clearCookie() } });
+}
+
+async function handleSetupPage(req: Request, env: Env, slug: string): Promise<Response> {
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) {
+    if (guard.status === 401) return new Response(null, { status: 302, headers: { Location: '/login' } });
+    return html(renderErrorPage('Produktet blev ikke fundet.'), 404);
+  }
+  const product = guard.product;
+  const draftRaw = await env.DASHBOARD_KV.get(`draft:${slug}`);
+  const draft = draftRaw ? JSON.parse(draftRaw) : null;
+  const initial = JSON.stringify({ slug, domain: product.domain, status: product.status, draft });
+  return html(renderSetupPage(slug, product.domain, initial));
+}
+
+async function handleProductPage(req: Request, env: Env, slug: string): Promise<Response> {
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) {
+    if (guard.status === 401) return new Response(null, { status: 302, headers: { Location: '/login' } });
+    return html(renderErrorPage('Produktet blev ikke fundet.'), 404);
+  }
+  return appProductRedirect(slug, env);
+}
+
+async function appProductRedirect(slug: string, env: Env): Promise<Response> {
+  const product = await getProduct(slug, env.DASHBOARD_KV);
+  if (product && product.status === 'active') {
+    const token = await env.DASHBOARD_KV.get(`client_token:${slug}`);
+    const loc = token
+      ? `${env.DASHBOARD_URL}/?view=client&client=${slug}&token=${token}`
+      : `${env.DASHBOARD_URL}/?view=client&client=${slug}`;
+    return new Response(null, { status: 302, headers: { Location: loc } });
+  }
+  return new Response(null, { status: 302, headers: { Location: `/app/p/${slug}/setup` } });
+}
+
+async function handleApp(req: Request, env: Env): Promise<Response> {
+  const id = await getIdentity(req, env);
+  if (!id) return new Response(null, { status: 302, headers: { Location: '/login' } });
+
+  // Ops or multi-product: minimal functional list (styled center is Milestone 2).
+  let slugs: string[];
+  if (id.isOps) {
+    const list = await env.DASHBOARD_KV.list({ prefix: 'config:' });
+    slugs = list.keys.map(k => k.name.slice('config:'.length));
+  } else {
+    slugs = (await getAccount(id.email, env.DASHBOARD_KV))?.productSlugs ?? [];
+  }
+
+  const only = slugs[0];
+  if (!id.isOps && slugs.length === 1 && only) {
+    return appProductRedirect(only, env);
+  }
+  const items = slugs.map(s => `<li><a href="/app/p/${s}" style="color:#86AD94">${s}</a></li>`).join('');
+  return html(`<!DOCTYPE html><html lang="da"><head><meta charset="utf-8"><meta name="robots" content="noindex">
+<title>Mine websites — Found by AI</title></head>
+<body style="font-family:-apple-system,sans-serif;background:#0A0D10;color:#E0DED8;padding:40px">
+<h1 style="font-size:20px">${id.isOps ? 'Alle websites (Ops)' : 'Mine websites'}</h1>
+<ul style="line-height:2">${items || '<li>Ingen endnu.</li>'}</ul>
+<p><a href="/api/auth/logout" style="color:#9CA29C">Log ud</a></p>
+</body></html>`);
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
@@ -832,6 +1080,28 @@ export default {
       return handleWebhook(req, env, ctx);
     if (req.method === 'GET' && p0 === 'api' && p1 === 'dns-status')
       return handleDnsStatus(req, env, ctx);
+    if (req.method === 'GET' && p0 === 'api' && p1 === 'check')
+      return handleCheck(req, env);
+    if (req.method === 'POST' && p0 === 'api' && p1 === 'start')
+      return handleStart(req, env, ctx);
+    if (req.method === 'POST' && p0 === 'api' && p1 === 'waitlist')
+      return handleWaitlist(req, env);
+
+    if (req.method === 'GET' && p0 === 'login') return handleLoginPage();
+    if (req.method === 'POST' && p0 === 'api' && p1 === 'auth' && parts[2] === 'request')
+      return handleAuthRequest(req, env, ctx);
+    if (req.method === 'GET' && p0 === 'auth' && p1 === 'verify')
+      return handleAuthVerify(req, env);
+    if (req.method === 'POST' && p0 === 'api' && p1 === 'auth' && parts[2] === 'logout')
+      return handleLogout(req, env);
+
+    if (req.method === 'GET' && p0 === 'app' && !p1) return handleApp(req, env);
+    if (req.method === 'GET' && p0 === 'app' && p1 === 'p' && parts[2] && parts[3] === 'setup')
+      return handleSetupPage(req, env, parts[2]);
+    if (req.method === 'GET' && p0 === 'app' && p1 === 'p' && parts[2] && !parts[3])
+      return handleProductPage(req, env, parts[2]);
+    if (req.method === 'GET' && p0 === 'api' && p1 === 'auth' && parts[2] === 'logout')
+      return handleLogout(req, env); // GET convenience for the list link
 
     return new Response('Not found', { status: 404 });
   },

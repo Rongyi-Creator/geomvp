@@ -5,11 +5,13 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250620.0",
     "typescript": "^5.8.3",
-    "wrangler": "^3.115.0"
+    "wrangler": "^4.103.0"
   },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "types": "wrangler types"
+    "types": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
   }
 }
