@@ -58,3 +58,17 @@ export async function saveProduct(p: Product, kv: KVNamespace): Promise<void> {
 export async function putWaitlist(email: string, domain: string, platform: string, kv: KVNamespace): Promise<void> {
   await kv.put(`waitlist:${email}`, JSON.stringify({ email, domain, platform, createdAt: new Date().toISOString() }));
 }
+
+// Builds the dashboard-worker deep link. Ops → rich ops view authenticated by
+// the master DASHBOARD_TOKEN (dashboard swaps ?token= for a cookie, worker.ts:1271).
+// Client → per-product client view authenticated by client_token.
+export function dashboardUrl(
+  opts: { base: string; opsToken: string; clientToken: string | null },
+  slug: string,
+  isOps: boolean,
+): string {
+  if (isOps) return `${opts.base}/?view=ops&client=${slug}&token=${opts.opsToken}`;
+  return opts.clientToken
+    ? `${opts.base}/?view=client&client=${slug}&token=${opts.clientToken}`
+    : `${opts.base}/?view=client&client=${slug}`;
+}

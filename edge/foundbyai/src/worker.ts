@@ -6,7 +6,7 @@
 
 import {
   deriveSlug, addProduct, getProduct, saveProduct,
-  getAccount, putWaitlist, type Product,
+  getAccount, putWaitlist, dashboardUrl, type Product,
 } from './lib/account.ts';
 import {
   mintLoginToken, consumeLoginToken, createSession, destroySession,
@@ -23,6 +23,7 @@ interface Env {
   SITE_URL: string;    // https://foundbyai.dk
   GEO_PROXY_IP: string; // 76.76.21.21
   DASHBOARD_URL: string; // customer dashboard origin
+  DASHBOARD_TOKEN: string; // master ops token for dashboard worker (?view=ops)
   OPS_EMAILS: string;
 }
 
@@ -1018,16 +1019,17 @@ async function handleProductPage(req: Request, env: Env, slug: string): Promise<
     if (guard.status === 401) return new Response(null, { status: 302, headers: { Location: '/login' } });
     return html(renderErrorPage('Produktet blev ikke fundet.'), 404);
   }
-  return appProductRedirect(slug, env);
+  return appProductRedirect(slug, env, guard.id.isOps);
 }
 
-async function appProductRedirect(slug: string, env: Env): Promise<Response> {
+async function appProductRedirect(slug: string, env: Env, isOps: boolean): Promise<Response> {
   const product = await getProduct(slug, env.DASHBOARD_KV);
   if (product && product.status === 'active') {
-    const token = await env.DASHBOARD_KV.get(`client_token:${slug}`);
-    const loc = token
-      ? `${env.DASHBOARD_URL}/?view=client&client=${slug}&token=${token}`
-      : `${env.DASHBOARD_URL}/?view=client&client=${slug}`;
+    const clientToken = await env.DASHBOARD_KV.get(`client_token:${slug}`);
+    const loc = dashboardUrl(
+      { base: env.DASHBOARD_URL, opsToken: env.DASHBOARD_TOKEN, clientToken },
+      slug, isOps,
+    );
     return new Response(null, { status: 302, headers: { Location: loc } });
   }
   return new Response(null, { status: 302, headers: { Location: `/app/p/${slug}/setup` } });
@@ -1048,7 +1050,7 @@ async function handleApp(req: Request, env: Env): Promise<Response> {
 
   const only = slugs[0];
   if (!id.isOps && slugs.length === 1 && only) {
-    return appProductRedirect(only, env);
+    return appProductRedirect(only, env, id.isOps);
   }
   const items = slugs.map(s => `<li><a href="/app/p/${s}" style="color:#86AD94">${s}</a></li>`).join('');
   return html(`<!DOCTYPE html><html lang="da"><head><meta charset="utf-8"><meta name="robots" content="noindex">

@@ -40,3 +40,22 @@ test('putWaitlist stores keyed by email, overwrites on resubmit', async () => {
   assert.equal(rec.platform, 'Wix');
   assert.ok(rec.createdAt);
 });
+
+import { dashboardUrl } from '../src/lib/account.ts';
+
+test('dashboardUrl builds ops vs client URLs', () => {
+  const base = 'https://dash.example';
+  assert.equal(
+    dashboardUrl({ base, opsToken: 'OPS', clientToken: 'CT' }, 'virum', true),
+    'https://dash.example/?view=ops&client=virum&token=OPS',
+  );
+  assert.equal(
+    dashboardUrl({ base, opsToken: 'OPS', clientToken: 'CT' }, 'virum', false),
+    'https://dash.example/?view=client&client=virum&token=CT',
+  );
+  // client with no per-product token yet → omit token param
+  assert.equal(
+    dashboardUrl({ base, opsToken: 'OPS', clientToken: null }, 'virum', false),
+    'https://dash.example/?view=client&client=virum',
+  );
+});
