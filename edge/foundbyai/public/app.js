@@ -8,6 +8,8 @@
   var PAL = { accent: '#587B66', strong: '#456250', soft: '#EAF0EC', tint: '#F1F5F2', bright: '#86AD94' };
   var $ = function (s, r) { return (r || document).querySelector(s); };
 
+  function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
   var form = $('#fbai-form');
   var input = $('#fbai-input');
   var feedback = $('#hero-feedback');
@@ -208,7 +210,7 @@
       if (state.startDone) {
         return '<div style="max-width:460px; width:100%; margin:28px auto 0; padding:24px 26px; background:#fff; border:1.5px solid var(--accent); border-radius:14px; text-align:left; box-shadow:0 8px 30px -10px rgba(88,123,102,0.4); animation:fbai-rise .45s cubic-bezier(.2,.7,.2,1) both;">' +
           '<div style="display:flex; align-items:center; gap:9px; margin-bottom:8px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; font-size:13px;">✓</span><span style="font-family:\'Geist\',sans-serif; font-weight:600; font-size:15px;">Tjek din indbakke</span></div>' +
-          '<p style="margin:0; font-size:14px; color:#46453E; line-height:1.5;">Vi har sendt et login-link til <strong>' + (state.startEmail || '') + '</strong>. Klik på linket for at fortsætte opsætningen.</p>' +
+          '<p style="margin:0; font-size:14px; color:#46453E; line-height:1.5;">Vi har sendt et login-link til <strong>' + escHtml(state.startEmail || '') + '</strong>. Klik på linket for at fortsætte opsætningen.</p>' +
         '</div>';
       }
       return '<div style="max-width:460px; width:100%; margin:28px auto 0; padding:24px 26px; background:#fff; border:1.5px solid var(--accent); border-radius:14px; text-align:left; box-shadow:0 8px 30px -10px rgba(88,123,102,0.4); animation:fbai-rise .45s cubic-bezier(.2,.7,.2,1) both;">' +
