@@ -59,6 +59,25 @@ export async function putWaitlist(email: string, domain: string, platform: strin
   await kv.put(`waitlist:${email}`, JSON.stringify({ email, domain, platform, createdAt: new Date().toISOString() }));
 }
 
+// Reads the latest Otterly citation count for a slug from the shared KV (written
+// by the dashboard worker). Tolerant of shape: array length, or {count|total}.
+// Returns null when absent/unparseable so the card degrades gracefully.
+export async function citationCount(slug: string, kv: KVNamespace): Promise<number | null> {
+  const raw = await kv.get(`otterly_citations:${slug}`);
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as unknown;
+    if (Array.isArray(v)) return v.length;
+    if (v && typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      if (typeof o['count'] === 'number') return o['count'];
+      if (typeof o['total'] === 'number') return o['total'];
+      if (Array.isArray(o['citations'])) return o['citations'].length;
+    }
+    return null;
+  } catch { return null; }
+}
+
 // Builds the dashboard-worker deep link. Ops → rich ops view authenticated by
 // the master DASHBOARD_TOKEN (dashboard swaps ?token= for a cookie, worker.ts:1271).
 // Client → per-product client view authenticated by client_token.

@@ -6,12 +6,13 @@
 
 import {
   deriveSlug, addProduct, getProduct, saveProduct,
-  getAccount, putWaitlist, dashboardUrl, type Product,
+  getAccount, putWaitlist, dashboardUrl, citationCount, type Product,
 } from './lib/account.ts';
 import {
   mintLoginToken, consumeLoginToken, createSession, destroySession,
   getIdentity, sessionCookie, clearCookie, randomHex,
 } from './lib/auth.ts';
+import { appShell, productCard } from './lib/view.ts';
 
 interface Env {
   DASHBOARD_KV: KVNamespace;
@@ -1039,11 +1040,10 @@ async function handleApp(req: Request, env: Env): Promise<Response> {
   const id = await getIdentity(req, env);
   if (!id) return new Response(null, { status: 302, headers: { Location: '/login' } });
 
-  // Ops or multi-product: minimal functional list (styled center is Milestone 2).
   let slugs: string[];
   if (id.isOps) {
-    const list = await env.DASHBOARD_KV.list({ prefix: 'config:' });
-    slugs = list.keys.map(k => k.name.slice('config:'.length));
+    const list = await env.DASHBOARD_KV.list({ prefix: 'product:' });
+    slugs = list.keys.map(k => k.name.slice('product:'.length));
   } else {
     slugs = (await getAccount(id.email, env.DASHBOARD_KV))?.productSlugs ?? [];
   }
@@ -1052,14 +1052,24 @@ async function handleApp(req: Request, env: Env): Promise<Response> {
   if (!id.isOps && slugs.length === 1 && only) {
     return appProductRedirect(only, env, id.isOps);
   }
-  const items = slugs.map(s => `<li><a href="/app/p/${s}" style="color:#86AD94">${s}</a></li>`).join('');
-  return html(`<!DOCTYPE html><html lang="da"><head><meta charset="utf-8"><meta name="robots" content="noindex">
-<title>Mine websites — Found by AI</title></head>
-<body style="font-family:-apple-system,sans-serif;background:#0A0D10;color:#E0DED8;padding:40px">
-<h1 style="font-size:20px">${id.isOps ? 'Alle websites (Ops)' : 'Mine websites'}</h1>
-<ul style="line-height:2">${items || '<li>Ingen endnu.</li>'}</ul>
-<p><a href="/api/auth/logout" style="color:#9CA29C">Log ud</a></p>
-</body></html>`);
+
+  const cards: string[] = [];
+  for (const s of slugs) {
+    const product = await getProduct(s, env.DASHBOARD_KV);
+    if (!product) continue;
+    const metric = product.status === 'active'
+      ? (await citationCount(s, env.DASHBOARD_KV) !== null
+          ? `${await citationCount(s, env.DASHBOARD_KV)} AI-citater registreret`
+          : 'AI-lag aktivt')
+      : null;
+    cards.push(productCard(s, product, metric));
+  }
+  const body = cards.length ? cards.join('') : `<p class="empty">Ingen websites endnu.</p>`;
+  return html(appShell({
+    title: 'Mine websites',
+    heading: id.isOps ? 'Alle websites (Ops)' : 'Mine websites',
+    body, active: 'sites',
+  }));
 }
 
 export default {
