@@ -4,7 +4,7 @@ import { MemKV } from '../src/lib/kvmock.ts';
 import {
   deriveSlug, getAccount, saveAccount, addProduct,
   getProduct, saveProduct, putWaitlist, citationCount, productsForIdentity, type Product,
-  setSubIndex, applySubscriptionEvent,
+  setSubIndex, getSlugBySub, applySubscriptionEvent,
 } from '../src/lib/account.ts';
 
 test('deriveSlug strips scheme, www, tld, path and normalizes', () => {
@@ -123,4 +123,32 @@ test('applySubscriptionEvent maps churn events to product status', async () => {
   assert.equal(await kv.get('config:virum'), null); // deactivated
 
   assert.equal(await applySubscriptionEvent('deleted', 'sub_unknown', kv), null);
+});
+
+test('applySubscriptionEvent: recovered restores past_due→active; ignores non-past_due; deleted reaps sub-index', async () => {
+  const kv = new MemKV() as unknown as KVNamespace;
+
+  // Setup: product starts active, transitions to past_due, then recovers.
+  await saveProduct({ slug: 'rec', domain: 'rec.dk', email: 'u@x.dk', status: 'active', createdAt: 'now', stripeSubscriptionId: 'sub_r1' }, kv);
+  await kv.put('config:rec', JSON.stringify({ domain: 'rec.dk' }));
+  await setSubIndex('sub_r1', 'rec', kv);
+
+  await applySubscriptionEvent('payment_failed', 'sub_r1', kv);
+  assert.equal((await getProduct('rec', kv))?.status, 'past_due');
+
+  // recovered: past_due → active
+  assert.equal(await applySubscriptionEvent('recovered', 'sub_r1', kv), 'rec');
+  assert.equal((await getProduct('rec', kv))?.status, 'active');
+  // config:rec must still exist (was never deleted on the past_due path)
+  assert.notEqual(await kv.get('config:rec'), null);
+
+  // recovered on a product NOT in past_due (e.g. draft) → status unchanged
+  await saveProduct({ slug: 'newsite', domain: 'new.dk', email: 'u@x.dk', status: 'draft', createdAt: 'now', stripeSubscriptionId: 'sub_r2' }, kv);
+  await setSubIndex('sub_r2', 'newsite', kv);
+  assert.equal(await applySubscriptionEvent('recovered', 'sub_r2', kv), 'newsite');
+  assert.equal((await getProduct('newsite', kv))?.status, 'draft');
+
+  // deleted reaps sub-index → getSlugBySub returns null afterwards
+  await applySubscriptionEvent('deleted', 'sub_r1', kv);
+  assert.equal(await getSlugBySub('sub_r1', kv), null);
 });

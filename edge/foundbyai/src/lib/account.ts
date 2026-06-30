@@ -107,10 +107,10 @@ export async function getSlugBySub(subId: string, kv: KVNamespace): Promise<stri
   return kv.get(`subindex:${subId}`);
 }
 
-// Applies a Stripe subscription churn event to product status. Returns the slug
-// touched, or null if the subscription is unknown.
+// Applies a Stripe subscription lifecycle event to product status. Returns the
+// slug touched, or null if the subscription id is unknown.
 export async function applySubscriptionEvent(
-  kind: 'deleted' | 'payment_failed', subId: string, kv: KVNamespace,
+  kind: 'deleted' | 'payment_failed' | 'recovered', subId: string, kv: KVNamespace,
 ): Promise<string | null> {
   const slug = await getSlugBySub(subId, kv);
   if (!slug) return null;
@@ -119,8 +119,14 @@ export async function applySubscriptionEvent(
   if (kind === 'deleted') {
     product.status = 'cancelled';
     await kv.delete(`config:${slug}`); // deactivate the GEO layer (dashboard stops serving)
-  } else {
+    await kv.delete(`subindex:${subId}`); // reap the reverse-index so re-delivery stays safe
+  } else if (kind === 'payment_failed') {
     product.status = 'past_due';
+  } else {
+    // 'recovered': only promote past_due → active; never touch other statuses.
+    // config:<slug> was never deleted on the past_due path, so it already exists.
+    if (product.status !== 'past_due') return slug;
+    product.status = 'active';
   }
   await saveProduct(product, kv);
   return slug;

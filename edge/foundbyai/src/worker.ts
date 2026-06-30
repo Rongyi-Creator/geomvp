@@ -80,8 +80,6 @@ async function getToken(token: string, env: Env): Promise<TokenData | null> {
   return data;
 }
 
-
-
 async function resolveARecord(domain: string): Promise<string[]> {
   try {
     const res = await fetch(
@@ -353,6 +351,9 @@ async function handleWebhook(req: Request, env: Env, ctx: ExecutionContext): Pro
   } else if (event.type === 'invoice.payment_failed') {
     const subId = String(obj['subscription'] ?? '');
     if (subId) ctx.waitUntil(applySubscriptionEvent('payment_failed', subId, env.DASHBOARD_KV));
+  } else if (event.type === 'invoice.paid') {
+    const subId = String(obj['subscription'] ?? '');
+    if (subId) ctx.waitUntil(applySubscriptionEvent('recovered', subId, env.DASHBOARD_KV));
   }
   return new Response('ok');
 }
