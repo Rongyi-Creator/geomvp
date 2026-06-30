@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { MemKV } from '../src/lib/kvmock.ts';
 import {
   deriveSlug, getAccount, saveAccount, addProduct,
-  getProduct, saveProduct, putWaitlist, type Product,
+  getProduct, saveProduct, putWaitlist, citationCount, type Product,
 } from '../src/lib/account.ts';
 
 test('deriveSlug strips scheme, www, tld, path and normalizes', () => {
@@ -58,4 +58,39 @@ test('dashboardUrl builds ops vs client URLs', () => {
     dashboardUrl({ base, opsToken: 'OPS', clientToken: null }, 'virum', false),
     'https://dash.example/?view=client&client=virum',
   );
+});
+
+test('citationCount: absent key → null', async () => {
+  const kv = new MemKV() as unknown as KVNamespace;
+  assert.equal(await citationCount('missing-slug', kv), null);
+});
+
+test('citationCount: JSON array → length', async () => {
+  const kv = new MemKV() as unknown as KVNamespace;
+  await kv.put('otterly_citations:virum', JSON.stringify(['a', 'b', 'c']));
+  assert.equal(await citationCount('virum', kv), 3);
+});
+
+test('citationCount: {count: n} → n', async () => {
+  const kv = new MemKV() as unknown as KVNamespace;
+  await kv.put('otterly_citations:virum', JSON.stringify({ count: 7 }));
+  assert.equal(await citationCount('virum', kv), 7);
+});
+
+test('citationCount: {total: n} → n (when count absent)', async () => {
+  const kv = new MemKV() as unknown as KVNamespace;
+  await kv.put('otterly_citations:virum', JSON.stringify({ total: 12 }));
+  assert.equal(await citationCount('virum', kv), 12);
+});
+
+test('citationCount: {citations: [...]} → array length (when count/total absent)', async () => {
+  const kv = new MemKV() as unknown as KVNamespace;
+  await kv.put('otterly_citations:virum', JSON.stringify({ citations: ['x', 'y'] }));
+  assert.equal(await citationCount('virum', kv), 2);
+});
+
+test('citationCount: invalid JSON → null', async () => {
+  const kv = new MemKV() as unknown as KVNamespace;
+  await kv.put('otterly_citations:virum', 'not json{');
+  assert.equal(await citationCount('virum', kv), null);
 });

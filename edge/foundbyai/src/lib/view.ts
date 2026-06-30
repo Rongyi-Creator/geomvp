@@ -47,7 +47,8 @@ export function statusBadge(status: ProductStatus): string {
 
 export function productCard(slug: string, product: Product, metric: string | null): string {
   const active = product.status === 'active';
-  const href = active ? `/app/p/${slug}` : `/app/p/${slug}/setup`;
+  const safeSlug = esc(slug);
+  const href = active ? `/app/p/${safeSlug}` : `/app/p/${safeSlug}/setup`;
   const cta = active ? 'Åbn dashboard →' : 'Fortsæt opsætning →';
   const metricLine = metric ? `<div class="metric">${esc(metric)}</div>` : '';
   return `<div class="card"><div class="meta">
