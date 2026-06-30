@@ -913,7 +913,7 @@ ${sent
 }
 
 async function sendLoginEmail(to: string, link: string, env: Env): Promise<void> {
-  await fetch('https://api.resend.com/emails', {
+  const _r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -928,6 +928,7 @@ async function sendLoginEmail(to: string, link: string, env: Env): Promise<void>
       </div>`,
     }),
   });
+  if (!_r.ok) console.error('Resend login email failed', _r.status, await _r.text().catch(() => ''));
 }
 
 function handleLoginPage(): Response { return html(renderLoginPage(false)); }
@@ -935,8 +936,10 @@ function handleLoginPage(): Response { return html(renderLoginPage(false)); }
 async function handleAuthRequest(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const ct = req.headers.get('content-type') || '';
   let email = '';
-  if (ct.includes('application/json')) email = ((await req.json()) as { email?: string }).email ?? '';
-  else email = String((await req.formData()).get('email') ?? '');
+  try {
+    if (ct.includes('application/json')) email = ((await req.json()) as { email?: string }).email ?? '';
+    else email = String((await req.formData()).get('email') ?? '');
+  } catch { email = ''; }
   email = email.trim().toLowerCase();
   // Always 200 (no enumeration). Only send if it looks like an email.
   if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
