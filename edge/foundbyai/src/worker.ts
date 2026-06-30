@@ -949,7 +949,7 @@ async function sendLoginEmail(to: string, link: string, env: Env): Promise<void>
     body: JSON.stringify({
       from: 'Found by AI <hej@foundbyai.dk>',
       to: [to],
-      subject: 'Dit login-link til Found by AI',
+      subject: `Dit login-link til Found by AI · ${new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })}`,
       html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:32px 16px">
         <h1 style="font-size:20px;color:#1A1A17">Log ind på Found by AI</h1>
         <p style="color:#46453E;line-height:1.6">Klik på knappen for at logge ind. Linket udløber om 15 minutter.</p>
@@ -1033,6 +1033,17 @@ async function appProductRedirect(slug: string, env: Env, isOps: boolean): Promi
     return new Response(null, { status: 302, headers: { Location: loc } });
   }
   return new Response(null, { status: 302, headers: { Location: `/app/p/${slug}/setup` } });
+}
+
+async function handleProfile(req: Request, env: Env): Promise<Response> {
+  const id = await getIdentity(req, env);
+  if (!id) return new Response(null, { status: 302, headers: { Location: '/login' } });
+  const role = id.isOps ? 'Ops-konto' : 'Kundekonto';
+  const body = `<div class="card"><div class="meta">
+    <div class="dom">${id.email.replace(/[&<>"]/g, '')}</div>
+    <div class="metric">${role}</div>
+  </div><a class="cta ghost" href="/api/auth/logout">Log ud</a></div>`;
+  return html(appShell({ title: 'Profil', heading: 'Profil', body, active: 'profile' }));
 }
 
 async function handleBilling(req: Request, env: Env): Promise<Response> {
@@ -1146,6 +1157,8 @@ export default {
     if (req.method === 'GET' && p0 === 'app' && !p1) return handleApp(req, env);
     if (req.method === 'GET' && p0 === 'app' && p1 === 'billing' && !parts[2])
       return handleBilling(req, env);
+    if (req.method === 'GET' && p0 === 'app' && p1 === 'profile' && !parts[2])
+      return handleProfile(req, env);
     if (req.method === 'GET' && p0 === 'app' && p1 === 'p' && parts[2] && parts[3] === 'setup')
       return handleSetupPage(req, env, parts[2]);
     if (req.method === 'GET' && p0 === 'app' && p1 === 'p' && parts[2] && !parts[3])
