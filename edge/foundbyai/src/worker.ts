@@ -4,6 +4,15 @@
 //         GET /api/dns-status
 // Cron: */5 * * * *  → checkPendingDns
 
+import {
+  deriveSlug, addProduct, getProduct, saveProduct,
+  getAccount, putWaitlist, type Product,
+} from './lib/account.ts';
+import {
+  mintLoginToken, consumeLoginToken, createSession, destroySession,
+  getIdentity, sessionCookie, clearCookie,
+} from './lib/auth.ts';
+
 interface Env {
   DASHBOARD_KV: KVNamespace;
   ANTHROPIC_API_KEY: string;
@@ -14,6 +23,7 @@ interface Env {
   SITE_URL: string;    // https://foundbyai.dk
   GEO_PROXY_IP: string; // 76.76.21.21
   DASHBOARD_URL: string; // customer dashboard origin
+  OPS_EMAILS: string;
 }
 
 interface TokenData {
@@ -880,6 +890,82 @@ async function handleCheck(req: Request, env: Env): Promise<Response> {
   }
 }
 
+// ── Auth / Login handlers ────────────────────────────────────────────────────
+
+function renderLoginPage(sent = false): string {
+  return `<!DOCTYPE html><html lang="da"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Log ind — Found by AI</title>
+<style>body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0A0D10;color:#E0DED8;display:flex;min-height:100vh;align-items:center;justify-content:center}
+.card{background:#12151A;border:1px solid #252830;border-radius:16px;padding:36px;max-width:380px;width:90%}
+h1{font-size:20px;margin:0 0 8px}p{color:#9CA29C;font-size:14px;line-height:1.5}
+input{width:100%;padding:12px 14px;border-radius:10px;border:1px solid #2A2E36;background:#0A0D10;color:#fff;font-size:15px;margin:14px 0;box-sizing:border-box}
+button{width:100%;padding:12px;border:none;border-radius:10px;background:#587B66;color:#fff;font-weight:600;font-size:15px;cursor:pointer}</style>
+</head><body><div class="card">
+${sent
+  ? `<h1>Tjek din indbakke</h1><p>Vi har sendt dig et login-link. Klik på linket i e-mailen for at logge ind.</p>`
+  : `<h1>Log ind</h1><p>Indtast din e-mail, så sender vi dig et login-link.</p>
+     <form method="POST" action="/api/auth/request">
+       <input type="email" name="email" required placeholder="din@email.dk">
+       <button type="submit">Send mig et login-link</button>
+     </form>`}
+</div></body></html>`;
+}
+
+async function sendLoginEmail(to: string, link: string, env: Env): Promise<void> {
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: 'Found by AI <hej@foundbyai.dk>',
+      to: [to],
+      subject: 'Dit login-link til Found by AI',
+      html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:32px 16px">
+        <h1 style="font-size:20px;color:#1A1A17">Log ind på Found by AI</h1>
+        <p style="color:#46453E;line-height:1.6">Klik på knappen for at logge ind. Linket udløber om 15 minutter.</p>
+        <p style="margin:24px 0"><a href="${link}" style="background:#587B66;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:600">Log ind →</a></p>
+        <p style="color:#8A8A80;font-size:13px">Hvis du ikke bad om dette, kan du ignorere e-mailen.</p>
+      </div>`,
+    }),
+  });
+}
+
+function handleLoginPage(): Response { return html(renderLoginPage(false)); }
+
+async function handleAuthRequest(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const ct = req.headers.get('content-type') || '';
+  let email = '';
+  if (ct.includes('application/json')) email = ((await req.json()) as { email?: string }).email ?? '';
+  else email = String((await req.formData()).get('email') ?? '');
+  email = email.trim().toLowerCase();
+  // Always 200 (no enumeration). Only send if it looks like an email.
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    ctx.waitUntil((async () => {
+      const t = await mintLoginToken(email, env);
+      await sendLoginEmail(email, `${env.SITE_URL}/auth/verify?t=${t}`, env);
+    })());
+  }
+  if (ct.includes('application/json')) return json({ ok: true });
+  return html(renderLoginPage(true));
+}
+
+async function handleAuthVerify(req: Request, env: Env): Promise<Response> {
+  const t = new URL(req.url).searchParams.get('t') ?? '';
+  const email = await consumeLoginToken(t, env);
+  if (!email) return html(renderErrorPage('Login-linket er udløbet eller allerede brugt. Bed om et nyt.'), 400);
+  // Ensure an account exists (covers verify-before-start edge cases).
+  if (!(await getAccount(email, env.DASHBOARD_KV))) {
+    await env.DASHBOARD_KV.put(`account:${email}`, JSON.stringify({ email, isOps: false, createdAt: new Date().toISOString(), productSlugs: [] }));
+  }
+  const sid = await createSession(email, env.DASHBOARD_KV);
+  return new Response(null, { status: 302, headers: { Location: '/app', 'Set-Cookie': sessionCookie(sid) } });
+}
+
+async function handleLogout(req: Request, env: Env): Promise<Response> {
+  await destroySession(req, env.DASHBOARD_KV);
+  return new Response(null, { status: 302, headers: { Location: '/', 'Set-Cookie': clearCookie() } });
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
@@ -903,10 +989,13 @@ export default {
     if (req.method === 'GET' && p0 === 'api' && p1 === 'check')
       return handleCheck(req, env);
 
-    // Customer login → dashboard. ponytail: simple redirect; real auth (email
-    // login vs token) is a product decision — change DASHBOARD_URL when settled.
-    if (req.method === 'GET' && p0 === 'login')
-      return Response.redirect(env.DASHBOARD_URL, 302);
+    if (req.method === 'GET' && p0 === 'login') return handleLoginPage();
+    if (req.method === 'POST' && p0 === 'api' && p1 === 'auth' && parts[2] === 'request')
+      return handleAuthRequest(req, env, ctx);
+    if (req.method === 'GET' && p0 === 'auth' && p1 === 'verify')
+      return handleAuthVerify(req, env);
+    if (req.method === 'POST' && p0 === 'api' && p1 === 'auth' && parts[2] === 'logout')
+      return handleLogout(req, env);
 
     return new Response('Not found', { status: 404 });
   },

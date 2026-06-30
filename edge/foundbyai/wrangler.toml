@@ -7,6 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 SITE_URL = "https://foundbyai.dk"
 GEO_PROXY_IP = "76.76.21.21"
 DASHBOARD_URL = "https://geo-dashboard.blake-designing.workers.dev"
+OPS_EMAILS = "hello.rongyi@gmail.com"
 
 # Landing + legal pages served as static assets; Worker handles /api/*, /activate, etc.
 # Static asset matches win; unmatched paths fall through to the fetch handler below.
