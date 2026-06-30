@@ -13,6 +13,7 @@ interface Env {
   RESEND_API_KEY: string;
   SITE_URL: string;    // https://foundbyai.dk
   GEO_PROXY_IP: string; // 76.76.21.21
+  DASHBOARD_URL: string; // customer dashboard origin
 }
 
 interface TokenData {
@@ -812,6 +813,73 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#1e
 
 // ── Export ───────────────────────────────────────────────────────────────────
 
+// ── Landing page compatibility check ─────────────────────────────────────────
+// Mirrors scripts/marketing/02-check-compatibility.ts, adapted for the Worker
+// runtime (no cheerio). Returns the same result/platform shape the LP expects.
+type CheckResult = 'compatible' | 'incompatible' | 'unreachable' | 'timeout' | 'system_error';
+
+function detectPlatform(html: string, headers: Headers): { platform: string; incompatible: boolean } {
+  const h = html.toLowerCase();
+  const server = (headers.get('server') || '').toLowerCase();
+  // Incompatible SaaS site-builders (can't change DNS to our proxy).
+  if (/static\.wixstatic\.com|wix\.com|x-wix/.test(h) || headers.has('x-wix-request-id'))
+    return { platform: 'Wix', incompatible: true };
+  if (/static1\.squarespace\.com|squarespace\.com/.test(h) || server.includes('squarespace'))
+    return { platform: 'Squarespace', incompatible: true };
+  if (/assets\.website-files\.com|assets-global\.website-files\.com|webflow\.io/.test(h) || /generator" content="webflow/.test(h))
+    return { platform: 'Webflow', incompatible: true };
+  if (/cdn\.shopify\.com|myshopify\.com/.test(h) || headers.has('x-shopid'))
+    return { platform: 'Shopify', incompatible: true };
+  // Compatible platforms.
+  if (/wp-content|wp-includes|generator" content="wordpress/.test(h))
+    return { platform: 'WordPress', incompatible: false };
+  return { platform: 'one.com', incompatible: false };
+}
+
+function countJsonLd(html: string): number {
+  let n = 0;
+  const re = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    try { JSON.parse(m[1].trim()); n++; } catch { /* malformed, skip */ }
+  }
+  return n;
+}
+
+async function handleCheck(req: Request, env: Env): Promise<Response> {
+  void env;
+  const raw = new URL(req.url).searchParams.get('url') || '';
+  let target: string;
+  try {
+    const u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    if (u.hostname.indexOf('.') === -1) throw new Error('no tld');
+    target = u.origin + '/';
+  } catch {
+    return json({ result: 'unreachable' as CheckResult });
+  }
+
+  try {
+    const res = await fetch(target, {
+      signal: AbortSignal.timeout(8000),
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; foundbyai-checker/1.0)' },
+      redirect: 'follow',
+    });
+    if (!res.ok) return json({ result: 'unreachable' as CheckResult });
+    const body = await res.text();
+    const { platform, incompatible } = detectPlatform(body, res.headers);
+    const signals = countJsonLd(body);
+    return json({
+      result: (incompatible ? 'incompatible' : 'compatible') as CheckResult,
+      platform,
+      signals,
+    });
+  } catch (e) {
+    const name = (e as Error)?.name || '';
+    if (name === 'TimeoutError' || name === 'AbortError') return json({ result: 'timeout' as CheckResult });
+    return json({ result: 'unreachable' as CheckResult });
+  }
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
@@ -832,6 +900,13 @@ export default {
       return handleWebhook(req, env, ctx);
     if (req.method === 'GET' && p0 === 'api' && p1 === 'dns-status')
       return handleDnsStatus(req, env, ctx);
+    if (req.method === 'GET' && p0 === 'api' && p1 === 'check')
+      return handleCheck(req, env);
+
+    // Customer login → dashboard. ponytail: simple redirect; real auth (email
+    // login vs token) is a product decision — change DASHBOARD_URL when settled.
+    if (req.method === 'GET' && p0 === 'login')
+      return Response.redirect(env.DASHBOARD_URL, 302);
 
     return new Response('Not found', { status: 404 });
   },
