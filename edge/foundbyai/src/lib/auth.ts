@@ -18,7 +18,8 @@ export function isOpsEmail(email: string, opsCsv: string): boolean {
 
 export function getCookie(req: Request, name: string): string | null {
   const cookies = req.headers.get('Cookie') || '';
-  const m = cookies.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
+  const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = cookies.match(new RegExp(`(?:^|;\\s*)${safe}=([^;]*)`));
   return m ? m[1] : null;
 }
 
@@ -37,6 +38,12 @@ export async function mintLoginToken(email: string, kv: KVNamespace): Promise<st
 
 export async function consumeLoginToken(token: string, kv: KVNamespace): Promise<string | null> {
   if (!/^[a-f0-9]{64}$/.test(token)) return null;
+  // ponytail: KV has no atomic compare-and-delete, so get-then-delete is not
+  // atomic. Two concurrent requests with the same token could both consume it
+  // within KV's eventual-consistency window. Accepted limitation: possessing
+  // the token already implies email-inbox access, so the worst case is two
+  // sessions for the same account (not takeover). Upgrade path: a Durable
+  // Object for login tokens if this ever matters.
   const email = await kv.get(`login:${token}`);
   if (!email) return null;
   await kv.delete(`login:${token}`); // single-use
@@ -55,6 +62,7 @@ export async function getIdentity(
 ): Promise<Identity | null> {
   const sid = getCookie(req, 'fbai_session');
   if (!sid) return null;
+  if (!/^[a-f0-9]{64}$/.test(sid)) return null;
   const email = await env.DASHBOARD_KV.get(`session:${sid}`);
   if (!email) return null;
   const acc = await getAccount(email, env.DASHBOARD_KV);
