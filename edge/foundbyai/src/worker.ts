@@ -49,8 +49,6 @@ interface DraftContent {
 
 const TOKEN_TTL = 7 * 24 * 3600; // 7 days in seconds
 
-function randomHexLocal(n: number): string { return randomHex(n); }
-
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function json(data: unknown, status = 200) {
@@ -314,8 +312,9 @@ async function handleSuccess(req: Request, env: Env): Promise<Response> {
   const stripeRes = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}`, {
     headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
   });
-  const session = (await stripeRes.json()) as { status?: string; customer?: string; subscription?: string };
+  const session = (await stripeRes.json()) as { status?: string; customer?: string; subscription?: string; metadata?: { slug?: string } };
   if (session.status !== 'complete') return Response.redirect(`${env.SITE_URL}/app/p/${slug}/setup`, 302);
+  if (session.metadata?.slug !== slug) return html(renderErrorPage('Sessionen passer ikke til dette produkt.'), 400);
 
   product.status = 'trial_pending_dns';
   if (session.customer) product.stripeCustomerId = session.customer;
@@ -392,7 +391,7 @@ async function activateClient(slug: string, env: Env) {
   // Mint the per-product dashboard token used by the dashboard worker's client auth.
   let clientToken = await env.DASHBOARD_KV.get(`client_token:${slug}`);
   if (!clientToken) {
-    clientToken = randomHexLocal(32);
+    clientToken = randomHex(32);
     await env.DASHBOARD_KV.put(`client_token:${slug}`, clientToken);
   }
   await env.DASHBOARD_KV.delete(`dns_pending:${slug}`);
