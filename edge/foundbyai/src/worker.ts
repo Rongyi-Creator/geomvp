@@ -228,13 +228,16 @@ async function requireOwnedProduct(req: Request, env: Env, slug: string): Promis
 }
 
 async function handleActivatePage(token: string, env: Env): Promise<Response> {
+  // Legacy cold-email link: map token→slug, create a session, send to setup.
   const data = await getToken(token, env);
   if (!data) return html(renderErrorPage('Linket er udløbet eller ugyldigt. Kontakt os for et nyt link.'), 404);
-
-  const draft = await getDraft(token, env);
-  const initial = JSON.stringify({ token, domain: data.domain, status: data.status, draft });
-
-  return html(renderActivatePage(data.domain, initial));
+  const slug = deriveSlug(data.domain);
+  await addProduct(data.email, slug, env.DASHBOARD_KV);
+  if (!(await getProduct(slug, env.DASHBOARD_KV))) {
+    await saveProduct({ slug, domain: data.domain, email: data.email, status: 'draft', createdAt: new Date().toISOString() }, env.DASHBOARD_KV);
+  }
+  const sid = await createSession(data.email, env.DASHBOARD_KV);
+  return new Response(null, { status: 302, headers: { Location: `/app/p/${slug}/setup`, 'Set-Cookie': sessionCookie(sid) } });
 }
 
 async function handleExtract(req: Request, env: Env): Promise<Response> {
@@ -458,7 +461,7 @@ a{color:#2563eb}</style></head>
 <p style="margin-top:24px"><a href="mailto:hej@foundbyai.dk">Kontakt os</a></p></div></body></html>`;
 }
 
-function renderActivatePage(domain: string, initialJson: string): string {
+function renderSetupPage(slug: string, domain: string, initialJson: string): string {
   return `<!DOCTYPE html>
 <html lang="da">
 <head>
@@ -676,7 +679,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#1e
   function startDnsPolling() {
     var timer;
     function check() {
-      fetch('/api/dns-status?token=' + D.token)
+      fetch('/api/dns-status?slug=' + D.slug)
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (data.active) {
@@ -706,7 +709,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#1e
     return;
   }
 
-  if (D.status === 'paid' || D.status === 'dns_pending') {
+  if (D.status === 'trial_pending_dns') {
     if (D.draft) populateFields(D.draft);
     else { $i('s1-loading').style.display = 'none'; }
     startStep3();
@@ -725,7 +728,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#1e
   fetch('/api/extract', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: D.token })
+    body: JSON.stringify({ slug: D.slug })
   })
     .then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
     .then(function(draft) { populateFields(draft); })
@@ -748,7 +751,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#1e
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        token: D.token,
+        slug: D.slug,
         businessName: $i('f-name').value,
         address: $i('f-address').value,
         phone: $i('f-phone').value,
@@ -777,7 +780,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#1e
     fetch('/api/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: D.token })
+      body: JSON.stringify({ slug: D.slug })
     })
       .then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
       .then(function(data) { window.location.href = data.url; })
@@ -989,6 +992,57 @@ async function handleLogout(req: Request, env: Env): Promise<Response> {
   return new Response(null, { status: 302, headers: { Location: '/', 'Set-Cookie': clearCookie() } });
 }
 
+async function handleSetupPage(req: Request, env: Env, slug: string): Promise<Response> {
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) {
+    // Not logged in → send to login; keep it simple.
+    return new Response(null, { status: 302, headers: { Location: '/login' } });
+  }
+  const product = guard.product;
+  const draftRaw = await env.DASHBOARD_KV.get(`draft:${slug}`);
+  const draft = draftRaw ? JSON.parse(draftRaw) : null;
+  const initial = JSON.stringify({ slug, domain: product.domain, status: product.status, draft });
+  return html(renderSetupPage(slug, product.domain, initial));
+}
+
+async function appProductRedirect(slug: string, env: Env): Promise<Response> {
+  const product = await getProduct(slug, env.DASHBOARD_KV);
+  if (product && product.status === 'active') {
+    const token = await env.DASHBOARD_KV.get(`client_token:${slug}`);
+    const loc = token
+      ? `${env.DASHBOARD_URL}/?view=client&client=${slug}&token=${token}`
+      : `${env.DASHBOARD_URL}/?view=client&client=${slug}`;
+    return new Response(null, { status: 302, headers: { Location: loc } });
+  }
+  return new Response(null, { status: 302, headers: { Location: `/app/p/${slug}/setup` } });
+}
+
+async function handleApp(req: Request, env: Env): Promise<Response> {
+  const id = await getIdentity(req, env);
+  if (!id) return new Response(null, { status: 302, headers: { Location: '/login' } });
+
+  // Ops or multi-product: minimal functional list (styled center is Milestone 2).
+  let slugs: string[];
+  if (id.isOps) {
+    const list = await env.DASHBOARD_KV.list({ prefix: 'config:' });
+    slugs = list.keys.map(k => k.name.slice('config:'.length));
+  } else {
+    slugs = (await getAccount(id.email, env.DASHBOARD_KV))?.productSlugs ?? [];
+  }
+
+  if (!id.isOps && slugs.length === 1) {
+    return appProductRedirect(slugs[0], env);
+  }
+  const items = slugs.map(s => `<li><a href="/app/p/${s}" style="color:#86AD94">${s}</a></li>`).join('');
+  return html(`<!DOCTYPE html><html lang="da"><head><meta charset="utf-8"><meta name="robots" content="noindex">
+<title>Mine websites — Found by AI</title></head>
+<body style="font-family:-apple-system,sans-serif;background:#0A0D10;color:#E0DED8;padding:40px">
+<h1 style="font-size:20px">${id.isOps ? 'Alle websites (Ops)' : 'Mine websites'}</h1>
+<ul style="line-height:2">${items || '<li>Ingen endnu.</li>'}</ul>
+<p><a href="/api/auth/logout" style="color:#9CA29C">Log ud</a></p>
+</body></html>`);
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
@@ -1023,6 +1077,14 @@ export default {
       return handleAuthVerify(req, env);
     if (req.method === 'POST' && p0 === 'api' && p1 === 'auth' && parts[2] === 'logout')
       return handleLogout(req, env);
+
+    if (req.method === 'GET' && p0 === 'app' && !p1) return handleApp(req, env);
+    if (req.method === 'GET' && p0 === 'app' && p1 === 'p' && parts[2] && parts[3] === 'setup')
+      return handleSetupPage(req, env, parts[2]);
+    if (req.method === 'GET' && p0 === 'app' && p1 === 'p' && parts[2] && !parts[3])
+      return appProductRedirect(parts[2], env);
+    if (req.method === 'GET' && p0 === 'api' && p1 === 'auth' && parts[2] === 'logout')
+      return handleLogout(req, env); // GET convenience for the list link
 
     return new Response('Not found', { status: 404 });
   },
