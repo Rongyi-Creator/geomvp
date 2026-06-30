@@ -57,6 +57,16 @@ export function productCard(slug: string, product: Product, metric: string | nul
   </div><a class="cta${active ? '' : ' ghost'}" href="${href}">${cta}</a></div>`;
 }
 
+export function billingRow(slug: string, product: Product): string {
+  const hasCustomer = !!product.stripeCustomerId;
+  const action = hasCustomer
+    ? `<form method="POST" action="/api/billing/portal" style="margin:0"><input type="hidden" name="slug" value="${esc(slug)}"><button class="cta" type="submit">Administrér</button></form>`
+    : `<span class="metric">Ingen aktivt abonnement</span>`;
+  return `<div class="card"><div class="meta">
+    <div class="dom">${esc(product.domain)} ${statusBadge(product.status)}</div>
+  </div>${action}</div>`;
+}
+
 export function appShell(opts: { title: string; heading: string; body: string; active: 'sites' | 'billing' | 'profile' }): string {
   const link = (key: string, href: string, label: string) =>
     `<a href="${href}"${opts.active === key ? ' class="on"' : ''}>${label}</a>`;

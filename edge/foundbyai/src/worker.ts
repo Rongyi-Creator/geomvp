@@ -6,13 +6,13 @@
 
 import {
   deriveSlug, addProduct, getProduct, saveProduct,
-  getAccount, putWaitlist, dashboardUrl, citationCount, type Product,
+  getAccount, putWaitlist, dashboardUrl, citationCount, productsForIdentity, type Product,
 } from './lib/account.ts';
 import {
   mintLoginToken, consumeLoginToken, createSession, destroySession,
   getIdentity, sessionCookie, clearCookie, randomHex,
 } from './lib/auth.ts';
-import { appShell, productCard } from './lib/view.ts';
+import { appShell, productCard, billingRow } from './lib/view.ts';
 
 interface Env {
   DASHBOARD_KV: KVNamespace;
@@ -1036,6 +1036,41 @@ async function appProductRedirect(slug: string, env: Env, isOps: boolean): Promi
   return new Response(null, { status: 302, headers: { Location: `/app/p/${slug}/setup` } });
 }
 
+async function handleBilling(req: Request, env: Env): Promise<Response> {
+  const id = await getIdentity(req, env);
+  if (!id) return new Response(null, { status: 302, headers: { Location: '/login' } });
+  const products = await productsForIdentity(id, env.DASHBOARD_KV);
+  const body = products.length
+    ? products.map(p => billingRow(p.slug, p)).join('')
+    : `<p class="empty">Ingen abonnementer endnu.</p>`;
+  return html(appShell({ title: 'Abonnement', heading: 'Abonnement', body, active: 'billing' }));
+}
+
+async function handleBillingPortal(req: Request, env: Env): Promise<Response> {
+  const id = await getIdentity(req, env);
+  if (!id) return json({ error: 'unauthorized' }, 401);
+  let slug = '';
+  const ct = req.headers.get('content-type') || '';
+  try {
+    if (ct.includes('application/json')) slug = ((await req.json()) as { slug?: string }).slug ?? '';
+    else slug = String((await req.formData()).get('slug') ?? '');
+  } catch { slug = ''; }
+  const guard = await requireOwnedProduct(req, env, slug);
+  if (guard instanceof Response) return guard;
+  const customer = guard.product.stripeCustomerId;
+  if (!customer) return html(renderErrorPage('Intet abonnement at administrere endnu.'), 400);
+
+  const params = new URLSearchParams({ customer, return_url: `${env.SITE_URL}/app/billing` });
+  const res = await fetch('https://api.stripe.com/v1/billing_portal/sessions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  const session = (await res.json()) as { url?: string; error?: { message: string } };
+  if (!session.url) return html(renderErrorPage('Kunne ikke åbne betalingsportal. Prøv igen.'), 502);
+  return new Response(null, { status: 302, headers: { Location: session.url } });
+}
+
 async function handleApp(req: Request, env: Env): Promise<Response> {
   const id = await getIdentity(req, env);
   if (!id) return new Response(null, { status: 302, headers: { Location: '/login' } });
@@ -1098,6 +1133,8 @@ export default {
       return handleStart(req, env, ctx);
     if (req.method === 'POST' && p0 === 'api' && p1 === 'waitlist')
       return handleWaitlist(req, env);
+    if (req.method === 'POST' && p0 === 'api' && p1 === 'billing' && parts[2] === 'portal')
+      return handleBillingPortal(req, env);
 
     if (req.method === 'GET' && p0 === 'login') return handleLoginPage();
     if (req.method === 'POST' && p0 === 'api' && p1 === 'auth' && parts[2] === 'request')
@@ -1108,6 +1145,8 @@ export default {
       return handleLogout(req, env);
 
     if (req.method === 'GET' && p0 === 'app' && !p1) return handleApp(req, env);
+    if (req.method === 'GET' && p0 === 'app' && p1 === 'billing' && !parts[2])
+      return handleBilling(req, env);
     if (req.method === 'GET' && p0 === 'app' && p1 === 'p' && parts[2] && parts[3] === 'setup')
       return handleSetupPage(req, env, parts[2]);
     if (req.method === 'GET' && p0 === 'app' && p1 === 'p' && parts[2] && !parts[3])

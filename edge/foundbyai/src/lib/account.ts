@@ -78,6 +78,26 @@ export async function citationCount(slug: string, kv: KVNamespace): Promise<numb
   } catch { return null; }
 }
 
+// Resolves the product list for an identity: all products for Ops, else the
+// account's owned slugs.
+export async function productsForIdentity(
+  id: { email: string; isOps: boolean }, kv: KVNamespace,
+): Promise<Product[]> {
+  let slugs: string[];
+  if (id.isOps) {
+    const list = await kv.list({ prefix: 'product:' });
+    slugs = list.keys.map(k => k.name.slice('product:'.length));
+  } else {
+    slugs = (await getAccount(id.email, kv))?.productSlugs ?? [];
+  }
+  const out: Product[] = [];
+  for (const s of slugs) {
+    const p = await getProduct(s, kv);
+    if (p) out.push(p);
+  }
+  return out;
+}
+
 // Builds the dashboard-worker deep link. Ops → rich ops view authenticated by
 // the master DASHBOARD_TOKEN (dashboard swaps ?token= for a cookie, worker.ts:1271).
 // Client → per-product client view authenticated by client_token.

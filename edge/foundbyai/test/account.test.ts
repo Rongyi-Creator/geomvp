@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { MemKV } from '../src/lib/kvmock.ts';
 import {
   deriveSlug, getAccount, saveAccount, addProduct,
-  getProduct, saveProduct, putWaitlist, citationCount, type Product,
+  getProduct, saveProduct, putWaitlist, citationCount, productsForIdentity, type Product,
 } from '../src/lib/account.ts';
 
 test('deriveSlug strips scheme, www, tld, path and normalizes', () => {
@@ -93,4 +93,17 @@ test('citationCount: invalid JSON → null', async () => {
   const kv = new MemKV() as unknown as KVNamespace;
   await kv.put('otterly_citations:virum', 'not json{');
   assert.equal(await citationCount('virum', kv), null);
+});
+
+test('productsForIdentity returns own products for client, all for ops', async () => {
+  const kv = new MemKV() as unknown as KVNamespace;
+  await saveProduct({ slug: 'a', domain: 'a.dk', email: 'u@x.dk', status: 'active', createdAt: 'now' }, kv);
+  await saveProduct({ slug: 'b', domain: 'b.dk', email: 'other@x.dk', status: 'draft', createdAt: 'now' }, kv);
+  await addProduct('u@x.dk', 'a', kv);
+
+  const client = await productsForIdentity({ email: 'u@x.dk', isOps: false }, kv);
+  assert.deepEqual(client.map(p => p.slug), ['a']);
+
+  const ops = await productsForIdentity({ email: 'admin@x.dk', isOps: true }, kv);
+  assert.deepEqual(ops.map(p => p.slug).sort(), ['a', 'b']);
 });
